@@ -9,7 +9,7 @@ class TradingBackTester(ABC):
     Classe virtuale per il backtesting di strategie di trading.
     """
 
-    def __init__(self, ticker: str, asked_start: str, asked_end: str):
+    def __init__(self, ticker: str, asked_start: str, asked_end: str, params: tuple):
         """
         Costruttore della classe virtuale che si occupa di settare le variabili di inizio e fine
         periodo e di scaricare i dati da Yahoo Finance.
@@ -22,16 +22,24 @@ class TradingBackTester(ABC):
             Data richiesta di inizio della serie storica considerata
         asked_end: str
             Data richiesta di fine della serie storica considerata
+        params: tuple
+            Parametri del modello, dipendono dalla classe figlia che viene chiamata
         """
         self._ticker = ticker
         self._asked_start = asked_start
         self._asked_end = asked_end
+        self._params = params
+        self._check_model_params()
         self._rawdata = self._download_data().droplevel(1, axis=1)
         self._obtained_start = self._rawdata.index[0]
         self._obtained_end = self._rawdata.index[-1]
         self._buyhold = self._buyhold_strategy()
         self._strategy = None
         self._strategy_name = None
+
+    @abstractmethod
+    def _check_model_params(self):
+        pass
 
     def _download_data(self):
         """
@@ -107,6 +115,9 @@ class TradingBackTester(ABC):
     def get_performance(self):
         return self._strategy.CumStrategyReturn[-1]
     
+    def subset_buyhold(self, mask) -> None:
+        self._buyhold = self._buyhold.iloc[mask,:]
+    
     def plot_buyhold_return(self):
         self._strategy.CumLogReturn.plot(label="Buy&Hold")
         plt.title("Log returns " + self._ticker)
@@ -132,16 +143,22 @@ class SMABackTester(TradingBackTester):
     Classe per il backtesting di strategie di trading SMA: è una sottoclasse di TradingBackTester.
     """
 
-    def __init__(self, ticker, asked_start, asked_end, sma_short: int, sma_long: int):
+    def __init__(self, ticker, asked_start, asked_end, params):
         """
         Costruttore della classe che si occupa di settare i parametri della classe parent e...
         """
-        super().__init__(ticker, asked_start, asked_end)
-        self._strategy_name = "SMA (" + str(sma_short) + "-" + str(sma_long) + ")"
-        self._sma_short = sma_short
-        self._sma_long = sma_long
+        super().__init__(ticker, asked_start, asked_end, params)
+        self._sma_short = self._params[0]
+        self._sma_long = self._params[1]
+        self._strategy_name = "SMA (" + str(self._sma_short) + "-" + str(self._sma_long) + ")"
         self._strategy = self._trading_strategy()
     
+    def _check_model_params(self) -> None:
+        if len(self._params) != 2:
+            raise KeyError("Errato numero di parametri.")
+        if self._params[0] >= self._params[1]:
+            raise KeyError("Finestra corta maggiore di quella lunga.")
+            
     def _trading_strategy(self) -> pd.DataFrame:
         """
         Metodo privato di definizione della strategia di trading adottata dalla sottoclasse.
@@ -169,15 +186,19 @@ class MomentumBackTester(TradingBackTester):
     TradingBackTester.
     """
 
-    def __init__(self, ticker, asked_start, asked_end, window: int):
+    def __init__(self, ticker, asked_start, asked_end, params):
         """
         Costruttore della classe che si occupa di settare i parametri della classe parent e...
         """
-        super().__init__(ticker, asked_start, asked_end)
-        self._strategy_name = "Momentum (" + str(window) + ")"
-        self._window = window
+        super().__init__(ticker, asked_start, asked_end, params)
+        self._strategy_name = "Momentum (" + str(params[0]) + ")"
+        self._window = params[0]
         self._strategy = self._trading_strategy()
     
+    def _check_model_params(self) -> None:
+        if len(self._params) != 1:
+            raise KeyError("Errato numero di parametri.")
+        
     def _trading_strategy(self) -> pd.DataFrame:
         """
         Metodo privato di definizione della strategia di trading adottata dalla sottoclasse.
@@ -199,16 +220,20 @@ class BollingerBackTester(TradingBackTester):
     di TradingBackTester.
     """
 
-    def __init__(self, ticker, asked_start, asked_end, sma_window: int, n_sigma: int):
+    def __init__(self, ticker, asked_start, asked_end, params):
         """
         Costruttore della classe che si occupa di settare i parametri della classe parent e...
         """
-        super().__init__(ticker, asked_start, asked_end)
-        self._strategy_name = "Bollinger (" + str(sma_window) + "-" + str(n_sigma) + ")"
-        self._sma_window = sma_window
-        self._n_sigma = n_sigma
+        super().__init__(ticker, asked_start, asked_end, params)
+        self._strategy_name = "Bollinger (" + str(params[0]) + "-" + str(params[1]) + ")"
+        self._sma_window = params[0]
+        self._n_sigma = params[1]
         self._strategy = self._trading_strategy()
     
+    def _check_model_params(self) -> None:
+        if len(self._params) != 2:
+            raise KeyError("Errato numero di parametri.")
+        
     def _trading_strategy(self) -> pd.DataFrame:
         """
         Metodo privato di definizione della strategia di trading adottata dalla sottoclasse.
