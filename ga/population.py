@@ -18,7 +18,7 @@ class PopulationBase(ABC):
     def mutate(self):
         pass
 
-
+# TODO: aggiungere possibilità di avere lower bound e upper bound diversi per ogni gene
 class Population(PopulationBase):
     _SIZE_KEY = "size"
     _N_PARENTS_KEY = "n_parents"
