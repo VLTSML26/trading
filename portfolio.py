@@ -3,7 +3,7 @@ import yfinance
 import numpy as np
 import pandas as pd
 from typing import Union, Any
-from matplotlib import pyplot as plt, axes
+from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
 class Tickers(yfinance.Tickers):
     """
@@ -236,9 +236,10 @@ class Portfolio(Tickers):
             bounds=bounds
         )
 
+# TODO: eventualmente creare una classe per la frontiera efficiente anche vedendo cosa segue nel corso di EDHEC
 def efficient_frontier(
         tickers: list[str],
-        n_samples: int = 100,
+        n_samples: int = 20,
         period: str = None,
         return_range: list[float] = None,
     ) -> list[Portfolio]:
@@ -248,15 +249,18 @@ def efficient_frontier(
     Parametri
     ---------
     tickers: list[str]
-        Lista contenente i tickers dei titoli da inserire in portafoglio, nello stesso formato
-        richiesto dai costruttori di yfinance.Tickers e delle classi qui derivate da essa.
+        Lista contenente i tickers dei titoli da inserire in portafoglio, nello
+        stesso formato richiesto dai costruttori di yfinance.Tickers e delle classi
+        qui derivate da essa.
     n_samples: int
-        Numero di punti da campionare sulla frontiera efficiente, corrisponderà alla lunghezza
-        della lista di portafogli che viene restituita dalla funzione. Di default è fissato a 100.
+        Numero di punti da campionare sulla frontiera efficiente, corrisponderà
+        alla lunghezza della lista di portafogli che viene restituita dalla funzione.
+        Di default è fissato a 20.
     period: str
-        Periodo di osservazione richiesto dei dati storici per i tickers inseriti in portafoglio,
-        nello stesso formato richiesto dai costruttori di Tickers e Portfolio. Default è None,
-        dunque tali costruttori vengono chiamati con periodo di un mese.
+        Periodo di osservazione richiesto dei dati storici per i tickers inseriti
+        in portafoglio, nello stesso formato richiesto dai costruttori di Tickers
+        e Portfolio. Default è None, dunque tali costruttori vengono chiamati con
+        periodo di un mese.
     """
     start_ptf = Portfolio(tickers, period=period)
 
@@ -273,3 +277,20 @@ def efficient_frontier(
     
     return ptfs
 
+def plot_efficient_frontier(ptfs: list[Portfolio]):
+    """
+    Funzione che plotta la frontiera efficiente ed i singoli asset in portafoglio
+    nel piano rischio-rendimento.
+    """
+    returns = [ptf.ptf_return for ptf in ptfs]
+    volatilities = [ptf.ptf_volatility for ptf in ptfs]
+
+    fig, ax = plt.subplots()
+    ax.plot(volatilities, returns, label='Efficient frontier')
+    ax.scatter(ptfs[0].annual_volatility, ptfs[0].annual_returns, label='Single assets')
+    
+    ax.set_xlabel('Volatility')
+    ax.set_ylabel('Return')
+    fig.suptitle('Risk-return space')
+
+    plt.legend()
