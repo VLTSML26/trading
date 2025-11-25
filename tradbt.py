@@ -126,7 +126,7 @@ class CPPI(Strategy):
 
     def cppi_strategy(self):
         """
-        Docstrings.
+        Metodo che implementa la strategia Constant Proportion Portfolio Insurance.
         """
         # initial settings
         floor = self._floor # floor value (constant if type = static, else updated in loop)
