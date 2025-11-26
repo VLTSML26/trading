@@ -5,47 +5,42 @@ import pandas as pd
 from scipy import linalg as la
 from typing import Union
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
+from marketdata.yfinance import YFinanceProvider
 
-class Tickers(yfinance.Tickers):
+class Tickers:
     """
-    Classe Tickers che eredita da yfinance.Tickers
+    Classe Tickers che gestisce un insieme di asset e i loro dati storici.
     """
-    def __init__(self, *args, period: str = "1mo", **kwargs):
+
+    def __init__(self, tickers, period="1mo", provider=None):
         """
-        Costruttore della classe Tickers.
-
         Parametri
         ---------
-        period: str
-            Estensione nel passato dei dati richiesti a yfinance.
-        *args, **kwargs: Any
-            Eventuali argomenti aggiuntivi da passare al costruttore della classe padre (ad esempio
-            la stringa dei tickers)
-
-        Note
-        ----
-        Gli unici attributi che vengono inizializzati direttamente in questo metodo sono l'argomento
-        posizionale periods in self._periods ed il dataframe self.df contenente i prezzi di chiusura
-        di tutti gli asset specificati. Questo viene inizializzato per evitare di dover effettuare
-        un download dall'API di yfinance ogni volta che l'attributo viene chiamato, dato che viene
-        chiamato spesso nei metodi della classe.
+        tickers : str | list[str]
+            Lista di ticker o singolo ticker.
+        period : str
+            Periodo storico (es: '1mo', '1y', '5y').
+        provider : MarketDataProvider | None
+            Provider di dati. Default = YFinanceProvider.
         """
-        # costruttore della classe padre
-        super().__init__(*args, **kwargs)
-        # attributi non lazy
+        self.tickers = tickers if isinstance(tickers, list) else [tickers]
         self._period = period
-        self.df = self.history(period=self._period).Close.dropna()
+        self._provider = provider or YFinanceProvider()
+
+        # Scarico i dati attraverso il provider
+        self.df = self._provider.download(self.tickers, period).dropna()
     
     def copy(self):
         return copy.copy(self)
     
-    @property
-    def _all_prices_df(self) -> pd.DataFrame:
-        """
-        Attributo privato: dataframe con tutti i prezzi (non solo chiusura, anche apertura, max e min)
-        utilizzato per invocare il metodo del diagramma a candela.
-        """
-        return self.history(period=self._period).dropna()
+    # TODO: da re-implementare dopo che non eredito più da yfinance.Tickers
+    # @property
+    # def _all_prices_df(self) -> pd.DataFrame:
+    #     """
+    #     Attributo privato: dataframe con tutti i prezzi (non solo chiusura, anche apertura, max e min)
+    #     utilizzato per invocare il metodo del diagramma a candela.
+    #     """
+    #     return self.history(period=self._period).dropna()
     
     @property
     def n_assets(self) -> int:
