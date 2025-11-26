@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
-from baseclass import Strategy
+from .baseclass import BaseBackTester
 from portfolio import Portfolio
-from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
+from matplotlib import pyplot as plt; plt.style.use('ggplot')
 
-class CPPI(Strategy):
+class CPPI(BaseBackTester):
     """
     # TODO: docstrings
     """
