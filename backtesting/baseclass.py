@@ -1,13 +1,13 @@
 import pandas as pd
 from portfolio import Portfolio
-from wrappers import cache_plot
+from .wrappers import cache_plot_once_per_figure
 from abc import ABC, abstractmethod
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-class Strategy(ABC):
+class BaseBackTester(ABC):
     """
     Unified abstract backtesting class for both portfolio and single-asset
     strategies. Single-asset are viewed as Portfolio objects.
@@ -58,22 +58,28 @@ class Strategy(ABC):
 class StrategyPlotter:
     called = False
 
-    def __init__(self, strategy: Strategy):
-        self.strategy = strategy
+    def __init__(self, backtester: BaseBackTester):
+        self._backtester = backtester
 
     @classmethod
     def reset(cls):
         cls.called = False
 
-    @cache_plot
+    # FIXME (ok cache plot per la prima volta ma poi diventa sempre assente il buy&hold)
+    @cache_plot_once_per_figure
     def plot_bh(self, *args, **kwargs) -> axes.Axes:
-        return self.strategy.bh.plot(label='Portfolio return', *args, **kwargs)
+        return self._backtester._bh.plot(label='Portfolio return', *args, **kwargs)
 
     def plot_strategy(self, *args, **kwargs) -> axes.Axes:
-        keep, *_ = self.strategy.strategy
-        return keep.plot(label=self.strategy.__repr__(), *args, **kwargs)
+        # trycatch qui per evitare di unpackare oggetti non-iterabili (caso di SMA)
+        try:
+            keep, *_ = self._backtester.strategy
+            return keep.plot(label=self._backtester.__repr__(), *args, **kwargs)
+        except AttributeError:
+            return self._backtester.strategy.plot(label=self._backtester.__repr__(), *args, **kwargs)
 
     def plot(self, *args, **kwargs):
         self.plot_bh(*args, **kwargs)
         self.plot_strategy(*args, **kwargs)
+        plt.title("Returns of buy&hold against trading strategies")
         plt.legend()
