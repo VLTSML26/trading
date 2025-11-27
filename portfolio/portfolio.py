@@ -9,19 +9,24 @@ from marketdata.yfinance import YFinanceProvider
 
 class Tickers:
     """
-    Classe Tickers che gestisce un insieme di asset e i loro dati storici.
+    Classe Tickers: è un catalogo di dati storici riferiti a una serie di asset
+    che viene letto da diversi possibili provider. Vengono implementati attributi classici
+    dell'analisi finanziaria per determinare i rendimenti e le statistiche di tali asset
+    nel periodo di riferimento.
+
+    Importante: è un oggetto data-centric. Nessuna logica finanziaria.
     """
 
-    def __init__(self, tickers, period="1mo", provider=None):
+    def __init__(self, tickers: Union[str, list[str]], period: str="1mo", provider=None):
         """
-        Parametri
-        ---------
-        tickers : str | list[str]
-            Lista di ticker o singolo ticker.
-        period : str
-            Periodo storico (es: '1mo', '1y', '5y').
-        provider : MarketDataProvider | None
-            Provider di dati. Default = YFinanceProvider.
+        Costruttore della classe Tickers.
+        
+        :param tickers: Lista di ticker o singolo ticker
+        :type tickers: Union[str, list[str]]
+        :param period: Periodo storico (es: '1mo', '1y', '5y')
+        :type period: str
+        :param provider: Provider di dati (default: Yahoo Finance)
+        :type provider: MarketDataProvider | None
         """
         self.tickers = tickers if isinstance(tickers, list) else [tickers]
         self._period = period
@@ -136,44 +141,54 @@ class Tickers:
     
         return -(self.daily_returns.mean() + z*self.daily_returns.std(ddof=0))
 
-    def plot(self, rescale: bool = True, *args, **kwargs) -> axes.Axes:
+    def plot(self, rescale: bool=True, *args, **kwargs) -> axes.Axes:
         """
         Metodo di disegno del valore dei titoli presenti nell'istanza invocata. Il plot avviene
         in un solo grafico dotato di legenda.
         
-        Parametri
-        ---------
-        rescale: bool = True
-            Se vero, riscala i titoli mostrando così il rapporto tra il valore puntuale e quello
+        :param rescale: Se vero, riscala i titoli mostrando così il rapporto tra il valore puntuale e quello
             all'inizio del periodo e permette dunque di comparare a occhio i vari rendimenti
-        *args e **kwargs: Any
-            Eventuali ulteriori argomenti passati alla funzione plot() di pd.DataFrame
+        :type rescale: bool
+        :return: Restituisce oggetto Axes
+        :rtype: Axes
         """
         if rescale:
             return (self.df/self.df.iloc[0]).plot(*args, **kwargs)
         else:
             return self.df.plot(*args, **kwargs)
 
-class Portfolio(Tickers):
+class Portfolio:
     """
-    Classe portafoglio, eredita da Tickers implementando metodi e attributi che dipendono dalla
-    distribuzione dei titoli nel portafoglio, ottenuta tramite la specifica dei pesi di ciascuno.
+    Classe che simula un portafoglio di asset costruito tramite dei pesi.
+    Utilizza la classe Tickers, che contiene i dati storici, ma non è un tipo di Tickers.
+    In termini OOP: non implementa inheritance bensì composition (HAS-A).
+    Un portafoglio è dunque un insieme di asset (tickers) con dei pesi associati.
+    
+    Importante: è un oggetto finance-centric. Implementa logica finanziaria.
     """
     _WEIGHT_BOUNDS = ((0., 1.),)
 
-    def __init__(self, *args, weights: Union[list, np.ndarray, pd.Series] = None, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, tickers: Tickers, weights: Union[list, np.ndarray, pd.Series]=None):
+        """
+        Costruttore di Portfoio
+        
+        :param tickers: Oggeto tickers contenente gli asset del portafoglio.
+        :type tickers: Tickers
+        :param weights: Pesi associati agli asset del portafoglio.
+        :type weights: Union[list, np.ndarray, pd.Series]
+        """
+        self._t = tickers
         self._w = weights
 
     @property
     def weights(self) -> pd.Series:
         if self._w is None:
-            self._w = np.repeat(1/self.n_assets, self.n_assets)
+            self._w = np.repeat(1/self._t.n_assets, self._t.n_assets)
             return self.weights
         elif isinstance(self._w, list):
-            return pd.Series(self._w, index=list(self.tickers.keys()))
+            return pd.Series(self._w, index=self._t.tickers)
         elif isinstance(self._w, np.ndarray):
-            return pd.Series(self._w, index=list(self.tickers.keys()))
+            return pd.Series(self._w, index=self._t.tickers)
         else:
             return self._w
 
@@ -181,7 +196,7 @@ class Portfolio(Tickers):
     def weights(self, new_value: Union[list, np.ndarray, pd.Series]) -> None:
         if not all(lower <= val <= upper for (lower, upper), val in zip(self._WEIGHT_BOUNDS*len(new_value), new_value)):
             raise ValueError("Each weight must be a number between 0 and 1.")
-        if len(new_value) != self.n_assets:
+        if len(new_value) != self._t.n_assets:
             raise ValueError("New weights must be equal to the number of assets in the portfolio.")
         if not np.isclose(sum(new_value), 1.0):
             new_value = [nv / sum(new_value) for nv in new_value]
@@ -189,19 +204,19 @@ class Portfolio(Tickers):
 
     @property
     def ptf_return(self) -> float:
-        return self.weights.T @ self.annual_returns
+        return self.weights.T @ self._t.annual_returns
     
     @property
     def ptf_comp_returns(self) -> pd.Series:
-        return self.returns @ self.weights
+        return self._t.returns @ self.weights
     
     @property
     def ptf_daily_returns(self) -> pd.Series:
-        return self.daily_returns @ self.weights
+        return self._t.daily_returns @ self.weights
     
     @property
     def covmat(self) -> pd.DataFrame:
-        return self.daily_returns.cov()
+        return self._t.daily_returns.cov()
 
     @property
     def ptf_volatility(self) -> float:
@@ -270,11 +285,11 @@ class Portfolio(Tickers):
             try:
                 chol = la.cholesky(self.covmat)
                 y = chol.T @ w
-                return (rf - w.T @ self.annual_returns) / (y.T @ y)**0.5
+                return (rf - w.T @ self._t.annual_returns) / (y.T @ y)**0.5
             # a volte non riesce (qualche minore non definito positivo per errori numerici)
             except la.LinAlgError:
                 # in questo caso fa il calcolo più pesante senza la Cholesky
-                return (rf - w.T @ self.annual_returns) / (self.weights.T @ self.covmat @ self.weights)**0.5
+                return (rf - w.T @ self._t.annual_returns) / (self.weights.T @ self.covmat @ self.weights)**0.5
         
         # funzione di constraint sui pesi e di reset dell'attributo della classe
         def update_w_and_sum_to_1(w):
@@ -289,7 +304,7 @@ class Portfolio(Tickers):
             method='SLSQP',
             options={'disp': False},
             constraints=({'type': 'eq', 'fun': update_w_and_sum_to_1}),
-            bounds=self._WEIGHT_BOUNDS*self.n_assets 
+            bounds=self._WEIGHT_BOUNDS*self._t.n_assets 
         )
         return self
 
