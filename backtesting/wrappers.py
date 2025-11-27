@@ -1,6 +1,6 @@
 import numpy as np
 from functools import wraps
-from portfolio import Portfolio
+from portfolio import Portfolio, Tickers
 from matplotlib import pyplot as plt
 
 def cache_plot_once_per_figure(func):
@@ -60,7 +60,5 @@ def cache_plot_once_per_class(func):
             print(f"Plotting method '{func.__name__}' has already been called for this class. Skipping plot.")
     return wrapper
 
-def single_asset_portfolio(ticker: str, period: str) -> Portfolio:
-    p = Portfolio(ticker, period=period)
-    p._w = np.array([1.])
-    return p
+def single_asset_portfolio(tickers: Tickers) -> Portfolio:
+    return Portfolio(tickers, np.array([1.]))
