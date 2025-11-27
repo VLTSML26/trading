@@ -2,8 +2,7 @@ import os
 from dotenv import load_dotenv
 import pandas as pd
 import requests
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
+from datetime import datetime
 from .base import MarketDataProvider
 
 load_dotenv() # carica variabili d'ambiente da .env

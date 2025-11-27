@@ -222,48 +222,6 @@ class Portfolio:
     def ptf_volatility(self) -> float:
         return (self.weights.T @ self.covmat @ self.weights)**0.5
 
-    # def minimize_vol(self, target_return: float = None) -> None:
-    #     """
-    #     Metodo che resetta i pesi del portafoglio minimizzandone la volatilità per un dato
-    #     rendimento. Viene minimizzata la forma quadratica sqrt(w^T C w) mediante l'utilizzo della
-    #     libreria minimize di scipy.optimize.
-        
-    #     Parametri
-    #     ---------
-    #     target_return: float
-    #         Rendimento target per il quale si desidera trovare i pesi che minimizzano la volatilità.
-    #     """
-    #     def to_min(w):
-    #         chol = la.cholesky(self.covmat)
-    #         y = chol.T @ w
-    #         # FIXME: indagare qui sotto perchè preferisce la forma quadratica e non la sqrt
-    #         return y.T @ y
-        
-    #     def match_ret(w):
-    #         self.weights = w # qui avviene il reset dei pesi con il Setter della classe
-    #         return target_return - self.ptf_return if target_return is not None else 0.
-        
-    #     def sum_weights(w):
-    #         return np.sum(w) - 1
-
-    #     w0 = self.weights.values # proposta iniziale
-    #     bounds = self._WEIGHT_BOUNDS*self.n_assets # vincoli
-    #     constr = (
-    #         {'type': 'eq', 'fun': sum_weights}, # constraint somma pesi
-    #         {'type': 'eq', 'fun': match_ret} # constraint rendimento
-    #     )
-
-    #     # minimizzazione
-    #     from scipy.optimize import minimize
-    #     _ = minimize(
-    #         to_min,
-    #         w0,
-    #         method='SLSQP',
-    #         options={'disp': False},
-    #         constraints=constr,
-    #         bounds=bounds
-    #     )
-
     def msr(self, rf: float = 0.03) -> Self:
         """
         Maximum Sharpe Ratio.
@@ -348,7 +306,7 @@ def efficient_frontier(
     start_ptf = Portfolio(tickers, period=period)
 
     if return_range is None:
-        return_range = (start_ptf.annual_returns.min(), start_ptf.annual_returns.max())
+        return_range = (start_ptf._t.annual_returns.min(), start_ptf._t.annual_returns.max())
 
     # definizione della griglia dei rendimenti
     ptfs = [start_ptf.copy() for _ in range(n_samples)]
@@ -371,32 +329,8 @@ def plot_efficient_frontier(ptfs: list[Portfolio]):
 
     fig, ax = plt.subplots()
     ax.scatter(volatilities, returns, c=sharpe_ratios, marker='*', label='Efficient frontier')
-    ax.scatter(ptfs[0].annual_volatility, ptfs[0].annual_returns, c='gray', label='Single assets')
+    ax.scatter(ptfs[0]._t.annual_volatility, ptfs[0]._t.annual_returns, c='gray', label='Single assets')
 
-    ax.set_xlabel('Volatility')
-    ax.set_ylabel('Return')
-    fig.suptitle('Risk-return space')
-
-    plt.legend()
-
-def plot_ef_cml(ptfs: list[Portfolio], rf_ratio: float):
-    """
-    Funzione che plotta la frontiera efficiente ed i singoli asset in portafoglio
-    nel piano rischio-rendimento.
-    """
-    returns = [ptf.ptf_return for ptf in ptfs]
-    volatilities = [ptf.ptf_volatility for ptf in ptfs]
-    max_sharpe = ptfs[0].copy()
-    max_sharpe.maximize_sharpe(rf_ratio)
-    cml_x = [0, max_sharpe.annual_volatility.max()]
-    m = (max_sharpe.ptf_return - rf_ratio) / max_sharpe.ptf_volatility
-    cml_y = [rf_ratio, m*max_sharpe.annual_volatility.max()+rf_ratio]
-    
-    fig, ax = plt.subplots()
-    ax.plot(volatilities, returns, label='Efficient frontier')
-    ax.plot(cml_x, cml_y, c='b', label='Capital market line')
-    ax.scatter(max_sharpe.annual_volatility, max_sharpe.annual_returns, c='gray', label='Single assets')
-    
     ax.set_xlabel('Volatility')
     ax.set_ylabel('Return')
     fig.suptitle('Risk-return space')
