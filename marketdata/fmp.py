@@ -92,7 +92,10 @@ class FMPProvider(MarketDataProvider):
                 df.set_index("date", inplace=True)
 
                 # TODO 2: implementare qua
-                return df["close"].rename(ticker)
+                try:
+                    return df["close"].rename(ticker)
+                except KeyError:
+                    return df["adjClose"].rename(ticker)
 
             except Exception:
                 continue
