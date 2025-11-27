@@ -3,10 +3,11 @@ import yfinance
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
-from typing import Union
+from typing import Union, Self
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 from marketdata.yfinance import YFinanceProvider
 
+# TODO 1: implementare possibilità di chiedere sia un periodo (con data fine = oggi) che data inizio e fine
 class Tickers:
     """
     Classe Tickers: è un catalogo di dati storici riferiti a una serie di asset
@@ -16,8 +17,7 @@ class Tickers:
 
     Importante: è un oggetto data-centric. Nessuna logica finanziaria.
     """
-
-    def __init__(self, tickers: Union[str, list[str]], period: str="1mo", provider=None):
+    def __init__(self, tickers: Union[str, list[str]], period: str='1mo', provider=None):
         """
         Costruttore della classe Tickers.
         
@@ -143,8 +143,8 @@ class Tickers:
 
     def plot(self, rescale: bool=True, *args, **kwargs) -> axes.Axes:
         """
-        Metodo di disegno del valore dei titoli presenti nell'istanza invocata. Il plot avviene
-        in un solo grafico dotato di legenda.
+        Metodo di visualizzazione del valore dei titoli presenti nell'istanza invocata.
+        Il plot avviene in un solo grafico dotato di legenda.
         
         :param rescale: Se vero, riscala i titoli mostrando così il rapporto tra il valore puntuale e quello
             all'inizio del periodo e permette dunque di comparare a occhio i vari rendimenti
@@ -264,20 +264,15 @@ class Portfolio:
     #         bounds=bounds
     #     )
 
-    def msr(self, rf: float = 0.03):
+    def msr(self, rf: float = 0.03) -> Self:
         """
         Maximum Sharpe Ratio.
-        Metodo che modifica i pesi del portafoglio in maniera da ottenere la massima
-        remunerazione del rischio al netto di un tasso risk-free specificato mediante
-        il metodo SLSQP di scipy.optimize.
-
-        Parametri
-        ---------
-        rf: float
-            Tasso di rendimento risk-free (e.g. US Treasury) nel periodo analizzato.
-            Di default è settato al 3% ma sarebbe meglio sempre fare delle analisi
-            e definirlo in maniera coerente con l'inflazione e i tassi del periodo
-            storico analizzato.
+        Metodo che modifica i pesi della classe al fine di ottenere il MSR Portfolio.
+        
+        :param rf: Tasso risk-free di riferimento.
+        :type rf: float
+        :return: Restituisce la classe stessa, con i pesi modificati per MSR.
+        :rtype: Self
         """
         # funzione da minimizzare (sharpe ratio negativo)
         def to_min(w):
@@ -308,19 +303,26 @@ class Portfolio:
         )
         return self
 
-    def gmv(self):
+    def gmv(self) -> Self:
         """
         Global Minimum Variance.
-        Metodo che modifica i pesi del portafoglio in maniera da minimizzarne la
-        varianza. Si può mostrare che tale portafoglio è il msr con tasso risk-free
-        posto a 0.
+        Metodo che modifica i pesi del portafoglio per minimizzare la varianza.
+        Si mostra che tale portafoglio è il MSR con tasso risk-free posto a 0.
+        
+        :return: Restituisce la classe stessa, con i pesi modificati per GMV.
+        :rtype: Self
         """
         return self.msr(rf=0.)
 
-    def ew(self):
+    def ew(self) -> Self:
+        """
+        Equally Weighted portfolio.
+        
+        :return: Restituisce la classe stessa, con i pesi modificati per EW.
+        :rtype: Self
+        """
         self._w = None
         return self
-
 
 # TODO: eventualmente creare una classe per la frontiera efficiente anche vedendo cosa segue nel corso di EDHEC
 def efficient_frontier(
@@ -330,23 +332,18 @@ def efficient_frontier(
     return_range: list[float] = None,
 ) -> list[Portfolio]:
     """
-    Funzione di calcolo della frontiera efficiente per un portafoglio di titoli.
-    
-    Parametri
-    ---------
-    tickers: list[str]
-        Lista contenente i tickers dei titoli da inserire in portafoglio, nello
-        stesso formato richiesto dai costruttori di yfinance.Tickers e delle classi
-        qui derivate da essa.
-    n_samples: int
-        Numero di punti da campionare sulla frontiera efficiente, corrisponderà
-        alla lunghezza della lista di portafogli che viene restituita dalla funzione.
-        Di default è fissato a 20.
-    period: str
-        Periodo di osservazione richiesto dei dati storici per i tickers inseriti
-        in portafoglio, nello stesso formato richiesto dai costruttori di Tickers
-        e Portfolio. Default è None, dunque tali costruttori vengono chiamati con
-        periodo di un mese.
+    Calcola la frontiera efficiente per un insieme di titoli.
+
+    :param tickers: Lista di ticker da includere nel portafoglio.
+    :type tickers: list[str]
+    :param n_samples: Numero di portafogli campionati sulla frontiera (default: 20).
+    :type n_samples: int
+    :param period: Periodo storico per il download dei dati (es. '1mo', '1y'). Se None viene usato il default del costruttore.
+    :type period: str | None
+    :param return_range: Intervallo [min, max] dei rendimenti target da esplorare. Se None si usa l'intervallo derivato dai singoli asset.
+    :type return_range: list[float] | None
+    :return: Lista di oggetti Portfolio corrispondente ai punti della frontiera efficiente.
+    :rtype: list[Portfolio]
     """
     start_ptf = Portfolio(tickers, period=period)
 
