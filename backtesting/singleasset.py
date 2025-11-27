@@ -1,3 +1,19 @@
+"""
+Module contenente le classi di backtesting per strategie su singolo asset.
+Le strategie implementate includono:
+- Media Mobile Semplice (SMA)
+- Momentum
+- Bande di Bollinger
+
+Sviluppato da Samuele Voltan durante e dopo il corso
+"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
+
+Riferimenti:
+- https://www.edhec.edu/en
+- https://www.coursera.org/learn/introduction-portfolio-construction-python
+- https://www.paolocoletti.com/financialtrading
+"""
+
 import pandas as pd
 import numpy as np
 from .baseclass import BaseBackTester
@@ -11,7 +27,7 @@ class SMA(BaseBackTester):
     mobile di breve periodo supera quella di lungo periodo, indicando un andamento negativo
     consolidato dei prezzi dell'asset.
     """
-    def __init__(self, tickers: Tickers=None, short: int=20, long: int=50):
+    def __init__(self, tickers: Tickers, short: int=20, long: int=50):
         """
         Costruttore della classe SMA.
         

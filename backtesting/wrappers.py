@@ -1,3 +1,14 @@
+"""
+Module contenente wrapper e decoratori per le classi.
+
+Sviluppato da Samuele Voltan durante e dopo il corso
+"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
+
+Riferimenti:
+- https://www.edhec.edu/en
+- https://www.coursera.org/learn/introduction-portfolio-construction-python
+"""
+
 import numpy as np
 from functools import wraps
 from portfolio import Portfolio, Tickers
@@ -7,6 +18,9 @@ def cache_plot_once_per_figure(func):
     """
     Decorator che esegue la funzione al massimo 1 volta per figura.
     Resetta il cache quando viene creata una nuova figura.
+    
+    :param func: Funzione da wrappare.
+    :return: Se la funzione è già stata chiamata per la figura corrente, restituisce None.
     """
     cache = {}
     
@@ -15,7 +29,7 @@ def cache_plot_once_per_figure(func):
         fig = plt.gcf()
         fig_id = id(fig)
         
-        # Se questa figura non è stata vista prima, esegui la funzione
+        # se questa figura non è stata vista prima, esegui la funzione
         if fig_id not in cache:
             cache[fig_id] = True
             result = func(self, *args, **kwargs)
@@ -25,6 +39,7 @@ def cache_plot_once_per_figure(func):
     
     return wrapper
 
+# NOTE: questa è deprecata ormai
 def cache_plot_once_per_object(func):
     """
     Decorator che esegue la funzione al massimo 1 volta per istanza della classe.
@@ -45,6 +60,7 @@ def cache_plot_once_per_object(func):
 
     return wrapper
 
+# NOTE: questa è deprecata ormai
 def cache_plot_once_per_class(func):
     """
     Decorator che esegue la funzione al massimo 1 volta per classe.
@@ -61,4 +77,12 @@ def cache_plot_once_per_class(func):
     return wrapper
 
 def single_asset_portfolio(tickers: Tickers) -> Portfolio:
+    """
+    Wrapper che crea un portafoglio con un singolo asset e peso 1.
+    
+    :param tickers: Oggetto Tickers contenente l'asset da includere nel portafoglio.
+    :type tickers: Tickers
+    :return: Portafoglio con un singolo asset e peso 1.
+    :rtype: Portfolio
+    """
     return Portfolio(tickers, np.array([1.]))

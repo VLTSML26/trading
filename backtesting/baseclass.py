@@ -1,3 +1,15 @@
+"""
+Module contenente la classe astratta BaseBackTester per il backtesting di strategie di trading su
+portafoglio e singoli titoli.
+
+Sviluppato da Samuele Voltan durante e dopo il corso
+"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
+
+Riferimenti:
+- https://www.edhec.edu/en
+- https://www.coursera.org/learn/introduction-portfolio-construction-python
+"""
+
 import pandas as pd
 from portfolio import Portfolio
 from .wrappers import cache_plot_once_per_figure
@@ -10,8 +22,8 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 
 class BaseBackTester(ABC):
     """
-    Classe astratta unificata per il backtesting di strategie su portafoglio
-    e singoli titoli. I singoli titoli sono trattati come oggetti Portfolio.
+    Classe astratta unificata per il backtesting di strategie su portafoglio e singoli titoli.
+    I singoli titoli sono trattati come oggetti Portfolio.
     """
     called = False
 
@@ -104,6 +116,12 @@ class StrategyPlotter:
             return self._backtester.strategy.plot(label=self._backtester.__repr__(), *args, **kwargs)
 
     def plot(self, *args, **kwargs):
+        """
+        Plotta la serie storica a fianco al rendimento della strategia adottata.
+        
+        :return: None
+        :rtype: None
+        """
         self.plot_bh(*args, **kwargs)
         self.plot_strategy(*args, **kwargs)
         plt.title("Returns of buy&hold against trading strategies")
