@@ -1,11 +1,10 @@
 import copy
-import yfinance
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
 from typing import Union, Self
-from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 from marketdata.yfinance import YFinanceProvider
+from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
 # TODO 1: implementare possibilità di chiedere sia un periodo (con data fine = oggi) che data inizio e fine
 class Tickers:
@@ -34,6 +33,18 @@ class Tickers:
 
         # Scarico i dati attraverso il provider
         self.df = self._provider.download(self.tickers, period).dropna()
+    
+    def _repr_html_(self):
+        summary = pd.DataFrame({
+            "Annual Returns": self.annual_returns,
+            "Annual Volatility": self.annual_volatility,
+            "Max Drawdown": self.max_drawdown,
+            "Sharpe Ratio": self.sharpe_ratio(),
+            "VaR (95%)": self.measured_var(),
+            "VaR Cornish-Fischer (95%)": self.cornish_fischer_var(),
+            "CVaR (95%)": self.expected_shortfall()
+        })
+        return f"<h3>Summary for {', '.join(self.tickers)}</h3>" + summary.to_html()
     
     def copy(self):
         return copy.copy(self)
@@ -95,8 +106,7 @@ class Tickers:
     
     @property
     def annual_volatility(self) -> pd.Series:
-        days_passed = (self.df.index[-1] - self.df.index[0]).days
-        return np.expm1(np.log1p(self.comp_returns)*365.24/days_passed) # TODO: check this
+        return self.daily_returns.std(ddof=0) * np.sqrt(252)
     
     @property
     def skewness(self) -> pd.Series:
@@ -114,24 +124,32 @@ class Tickers:
     def max_drawdown(self) -> pd.Series:
         return self.drawdown.max()
     
-    def sharpe_ratio(self, rf: float) -> pd.Series:
+    def sharpe_ratio(self, rf: float=0.03) -> pd.Series:
         return (self.annual_returns - rf) / self.annual_volatility
     
-    def measured_var(self, level: float) -> pd.Series:
+    def measured_var(self, level: float=0.95) -> pd.Series:
         """
         Calcolo il Value at Risk misurato nel periodo di campionamento della serie storica
         mediante la sua definizione.
         """
-        return -self.df.quantile(level)
+        # controllo level
+        if not 0 < level < 1:
+            raise ValueError("The confidence level must be between 0 and 1.")
+        
+        return -self.daily_returns.quantile(level)
 
-    def cornish_fischer_var(self, level: float) -> pd.Series:
+    def cornish_fischer_var(self, level: float=0.95) -> pd.Series:
         """
         Approccio semi-parametrico al calcolo del Value at Risk mediante l'espansione di
         Cornish-Fischer per le distribuzioni non-gaussiane.
         """
+        # controllo level
+        if not 0 < level < 1:
+            raise ValueError("The confidence level must be between 0 and 1.")
+
         # calcolo F^-1(level) per una distribuzione gaussiana normalizzata
         from scipy.stats import norm
-        z = norm.ppf(level/100)
+        z = norm.ppf(level)
 
         # performo su z l'espansione di Cornish-Fischer
         esp_1 = (z**2 - 1) * self.skewness/6
@@ -140,6 +158,10 @@ class Tickers:
         z = z + esp_1 + esp_2 - esp_3
     
         return -(self.daily_returns.mean() + z*self.daily_returns.std(ddof=0))
+
+    def expected_shortfall(self, level: float=0.95) -> pd.Series:
+        var_threshold = self.daily_returns.quantile(level)
+        return -self.daily_returns[self.daily_returns < var_threshold].mean()
 
     def plot(self, rescale: bool=True, *args, **kwargs) -> axes.Axes:
         """
@@ -156,6 +178,31 @@ class Tickers:
             return (self.df/self.df.iloc[0]).plot(*args, **kwargs)
         else:
             return self.df.plot(*args, **kwargs)
+        
+    def plot_dailyret_dist(self, level: float=0.95):
+        """
+        Grafico distribuzione rendimenti con VaR e CVaR evidenziati
+
+        :param level: Livello di confidenza per il calcolo del VaR e CVaR
+        :type level: float
+        """
+        _, axes = plt.subplots(len(self.tickers), 1, figsize=(8, 4*len(self.tickers)))
+        if len(self.tickers) == 1:
+            axes = [axes]
+        
+        for i, ticker in enumerate(self.tickers):
+            data = self.daily_returns[ticker]
+            var = self.measured_var(level)[ticker]
+            cvar = self.expected_shortfall(level)[ticker]
+            
+            axes[i].hist(data, bins=50, color='skyblue', edgecolor='black')
+            axes[i].axvline(-var, color='red', linestyle='--', label=f'VaR {level*100:.0f}%')
+            axes[i].axvline(-cvar, color='blue', linestyle='--', label=f'CVaR {level*100:.0f}%')
+            axes[i].set_title(f"Distribuzione rendimenti giornalieri {ticker}")
+            axes[i].legend()
+        
+        plt.tight_layout()
+        plt.show()
 
 class Portfolio:
     """
