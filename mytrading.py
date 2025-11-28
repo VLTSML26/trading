@@ -11,19 +11,16 @@ class TradingBackTester(ABC):
 
     def __init__(self, ticker: str, asked_start: str, asked_end: str, params: tuple):
         """
-        Costruttore della classe virtuale che si occupa di settare le variabili di inizio e fine
-        periodo e di scaricare i dati da Yahoo Finance.
+        Costruttore della classe virtuale di backtesting.
         
-        Parametri
-        ---------
-        ticker: str
-            Simbolo del ticker su Yahoo Finance
-        asked_start: str
-            Data richiesta di inizio della serie storica considerata
-        asked_end: str
-            Data richiesta di fine della serie storica considerata
-        params: tuple
-            Parametri del modello, dipendono dalla classe figlia che viene chiamata
+        :param ticker: Simbolo del titolo.
+        :type ticker: str
+        :param asked_start: Data richiesta di inizio della serie storica.
+        :type asked_start: str
+        :param asked_end: Data richiesta di fine della serie storica.
+        :type asked_end: str
+        :param params: Parametri del modello, dipendono dalla classe figlia che viene chiamata.
+        :type params: tuple
         """
         self._ticker = ticker
         self._asked_start = asked_start
@@ -145,7 +142,7 @@ class SMABackTester(TradingBackTester):
 
     def __init__(self, ticker, asked_start, asked_end, params):
         """
-        Costruttore della classe che si occupa di settare i parametri della classe parent e...
+        Costruttore.
         """
         super().__init__(ticker, asked_start, asked_end, params)
         self._sma_short = self._params[0]

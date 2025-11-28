@@ -1,6 +1,19 @@
+"""
+Module contenente la classe astratta BaseBackTester per il backtesting di strategie di trading su
+portafoglio e singoli titoli.
+
+Sviluppato da Samuele Voltan durante e dopo il corso
+"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
+
+Riferimenti:
+- https://www.edhec.edu/en
+- https://www.coursera.org/learn/introduction-portfolio-construction-python
+"""
+
 import pandas as pd
 from portfolio import Portfolio
 from .wrappers import cache_plot_once_per_figure
+from typing import Union
 from abc import ABC, abstractmethod
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
@@ -9,13 +22,19 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 
 class BaseBackTester(ABC):
     """
-    Unified abstract backtesting class for both portfolio and single-asset
-    strategies. Single-asset are viewed as Portfolio objects.
+    Classe astratta unificata per il backtesting di strategie su portafoglio e singoli titoli.
+    I singoli titoli sono trattati come oggetti Portfolio.
     """
     called = False
 
     def __init__(self, ptf: Portfolio):
-        self.ptf = ptf
+        """
+        Costruttore della classe BaseBackTester
+        
+        :param ptf: Oggetto Portfolio contenente il portafoglio su cui testare la strategia.
+        :type ptf: Portfolio
+        """
+        self._ptf = ptf
         self._strategy = None
 
     @classmethod
@@ -28,14 +47,14 @@ class BaseBackTester(ABC):
         Andamento del valore del titolo per una strategia buy and hold sul periodo
         di riferimento.
         """
-        return self.ptf.ptf_comp_returns.dropna()+1
+        return self._ptf.ptf_comp_returns.dropna()+1
 
     @property
     def _rets(self) -> pd.Series:
         """
         Valore giornaliero dei rendimenti del portafoglio.
         """
-        return self.ptf.ptf_daily_returns.dropna()
+        return self._ptf.ptf_daily_returns.dropna()
     
     @property
     def _ndays(self) -> int:
@@ -43,17 +62,21 @@ class BaseBackTester(ABC):
     
     @property
     @abstractmethod
-    def strategy(self):
+    def strategy(self) -> Union[pd.Series, tuple]:
         """
-        Must return:
-        - a pandas Series (cumulative wealth)
-        - a tuple (Series wealth, additional outputs)
+        Metodo astratto per implementazione delle varie strategie di trading.
+        
+        :return: Serie storica dei rendimenti della strategia
+        :rtype: Series[Any] | tuple
         """
         pass
 
     def plot(self, *args, **kwargs):
-        plotter = StrategyPlotter(self)
-        plotter.plot(*args, *kwargs)
+        """
+        Metodo per la visualizzazione grafica dell'andamento della strategia.
+        """
+        plotter = StrategyPlotter(self) # chiamata al plotter dove vengono demandate le funzioni grafiche
+        plotter.plot(*args, **kwargs)
 
 class StrategyPlotter:
     called = False
@@ -65,12 +88,26 @@ class StrategyPlotter:
     def reset(cls):
         cls.called = False
 
-    # FIXME (ok cache plot per la prima volta ma poi diventa sempre assente il buy&hold)
+    # il decoratore si rende utile siccome spesso ho riscontrato che questo metodo viene
+    # chiamato più volte nella stessa Figure, così evito legende lunghissime
     @cache_plot_once_per_figure
     def plot_bh(self, *args, **kwargs) -> axes.Axes:
+        """
+        Metodo di visualizzazione grafica della serie storica dei prezzi del titolo.
+        Corrisponde a una strategia semplice buy&hold.
+
+        :return: Restituisce oggetto Axes per plottare più grafici sulla stessa figura
+        :rtype: Axes
+        """
         return self._backtester._bh.plot(label='Portfolio return', *args, **kwargs)
 
     def plot_strategy(self, *args, **kwargs) -> axes.Axes:
+        """
+        Metodo di visualizzazione grafica dei rendimenti della strategia adottata.
+        
+        :return: Restituisce oggetto Axes per plottare più grafici sulla stessa figura
+        :rtype: Axes
+        """
         # trycatch qui per evitare di unpackare oggetti non-iterabili (caso di SMA)
         try:
             keep, *_ = self._backtester.strategy
@@ -79,6 +116,12 @@ class StrategyPlotter:
             return self._backtester.strategy.plot(label=self._backtester.__repr__(), *args, **kwargs)
 
     def plot(self, *args, **kwargs):
+        """
+        Plotta la serie storica a fianco al rendimento della strategia adottata.
+        
+        :return: None
+        :rtype: None
+        """
         self.plot_bh(*args, **kwargs)
         self.plot_strategy(*args, **kwargs)
         plt.title("Returns of buy&hold against trading strategies")

@@ -1,3 +1,16 @@
+"""
+Module contenente le classi di backtesting per strategie su portafogli complessi.
+Le strategie implementate includono:
+- Constant Proportion Portfolio Insurance (CPPI)
+
+Sviluppato da Samuele Voltan durante e dopo il corso
+"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
+
+Riferimenti:
+- https://www.edhec.edu/en
+- https://www.coursera.org/learn/introduction-portfolio-construction-python
+"""
+
 import numpy as np
 import pandas as pd
 from .baseclass import BaseBackTester
@@ -6,50 +19,51 @@ from matplotlib import pyplot as plt; plt.style.use('ggplot')
 
 class CPPI(BaseBackTester):
     """
-    # TODO: docstrings
+    Classe di backtesting della strategia di portfolio insurance CPPI.
     """
-    _DEFAULT = {
-        'M': 3,
-        'rf': 0.03,
-        'floor': 0.8,
-        'type': 'static',
-        'rebalance': 'W'
-    }
-
-    def __init__(self, ptf: Portfolio, par = None):
+    def __init__(self, ptf: Portfolio, m: int=3, rf: float=.03, floor: float=.8, type: str='static', reb: str='W'):
+        """
+        Costruttore di CPPI.
+        
+        :param ptf: Portfolio su cui implementare la strategia.
+        :type ptf: Portfolio
+        :param m: Moltiplicatore di rischio.
+        :type m: int
+        :param rf: Tasso risk-free adottato.
+        :type rf: float
+        :param floor: Livello minimo di protezione del portafoglio.
+        :type floor: float
+        :param type: Tipo di strategia CPPI ('static' o 'dynamic').
+        :type type: str
+        :param reb: Frequenza di ribilanciamento del portafoglio.
+        :type reb: str
+        """
         super().__init__(ptf)
-        par = {**self._DEFAULT, **(par or {})}
-        self._m = par['M']
-        self._rf = par['rf']
+        self._m = m
+        self._rf = rf
         self._daily_rf = np.expm1(np.log1p(self._rf)*(1/self._ndays))
-        self._rebalance = par['rebalance']
-        self._type = par['type']
-        self._floor = par['floor']
+        self._reb = reb
+        self._type = type
+        self._floor = floor
 
     def __repr__(self):
         _m = "M=" + str(self._m)
         _r = "r=" + str(self._rf*100) + "%"
-        _d = str(self._rebalance) + "-CPPI"
         _f = self._type + " " + str(self._floor*100) + "%"
-        return _d + " (" + _m + ", " + _r + ", " + _f + ")"
+        return f"{self._type}-CPPI({_m}, {_r}, {_f})"
     
     @property
     def _rebalancing(self) -> pd.DatetimeIndex:
         """
-        Attributo di tipo pandas.DatetimeIndex che seleziona all'interno delle date
-        della serie storia solamente quelle dove avviene il ribilanciamento del portafoglio
-        tra comparto rischioso e comparto sicuro.
-
-        Note
-        ----
-        Al fine di funzionare correttamente, devono essere campionate le date in cui
-        i mercati erano aperti, ovvero per le quali sono disponibili i rendimenti del portafoglio.
-        Questo viene ottenuto tramite la funzione adjust documentata sotto.
+        Metodo di campionamento delle date di ribilanciamento che implementa una funzione (adjust)
+        per non incorrere in giorni di mercato chiuso.
+        
+        :return: Sottoinsieme di date nella serie storica dove avviene il ribilanciamento.
+        :rtype: DatetimeIndex
         """
-        # parametro di configurazione del CPPI fornisce cadenza temporale -> campionamento date
-        if isinstance(self._rebalance, str):
+        if isinstance(self._reb, str):
             # se la riallocazione è giornaliera evito di mettere in piedi il circo
-            if self._rebalance == 'D':
+            if self._reb == 'D':
                 return self._bh.index
             else:
                 def adjust(missing_dates, wider_index):
@@ -57,7 +71,12 @@ class CPPI(BaseBackTester):
                     Funzione di supporto che permette di scartare le date campionate che non sono
                     presenti nella serie storica (mercati chiusi) e sostituirle con le più vicine
                     date disponibili.
+                    
+                    :param missing_dates: Descrizione
+                    :param wider_index: Descrizione
                     """
+                    # assicura che l'indice sia ordinato e senza duplicati
+                    wider_index = pd.DatetimeIndex(sorted(set(wider_index)))
                     adjusted_dates = []
                     for date in missing_dates:
                         if date in wider_index:
@@ -71,7 +90,7 @@ class CPPI(BaseBackTester):
                     # restituisce un nuovo pandas.DatetimeIndex
                     return pd.DatetimeIndex(adjusted_dates)
                 return adjust(
-                    self._bh.resample(self._rebalance).sum().index,
+                    self._bh.resample(self._reb).apply(lambda x: None).index,
                     self._bh.index
                 )
         else:
@@ -84,46 +103,43 @@ class CPPI(BaseBackTester):
         return self._strategy
 
     def cppi_strategy(self):
-        """
-        Metodo che implementa la strategia Constant Proportion Portfolio Insurance.
-        """
-        # initial settings
-        floor = self._floor # floor value (constant if type = static, else updated in loop)
-        account_value = 1. # initial wealth value
-        peak = 1. # if needed, initial peak is wealth value
+        # impostazioni iniziali
+        floor = self._floor # valore floor (costante se type = static, altrimenti aggiornato nel loop)
+        account_value = 1. # valore del ptf iniziale
+        peak = 1. # se necessario, il picco iniziale è il valore del ptf
         cushion = 1. - floor/account_value
         risk_w = np.maximum(np.minimum(self._m*cushion, 1), 0)
         risk_alloc = account_value*risk_w
         safe_alloc = account_value-risk_alloc
 
-        # support lists to iterate to
+        # liste di supporto per l'iterazione
         val_l = []
         floor_l = []
 
         for date in self._bh.index:
-            # computation of propension to risk
+            # calcolo della propensione al rischio
             if self._type == 'max dd':
-                # reset of floor value only in max dd floor CPPI
+                # reset del valore floor solo per CPPI max dd
                 peak = np.maximum(peak, account_value)
                 floor = peak*self._floor
 
-            # rebalancing of portfolio
+            # ribilanciamento del portafoglio
             if date in self._rebalancing:
-                cushion = 1 - floor/account_value # new cushion
-                risk_w = np.maximum(np.minimum(self._m*cushion, 1), 0) # new risk allocation
+                cushion = 1 - floor/account_value # nuovo cuscino
+                risk_w = np.maximum(np.minimum(self._m*cushion, 1), 0) # nuova allocazione rischiosa
                 risk_alloc = account_value*risk_w
                 safe_alloc = account_value-risk_alloc
             
-            # update wealth according to risk-free and asset returns
+            # aggiornamento del ptf secondo i rendimenti risk-free e dell'asset
             risk_alloc = risk_alloc*(1+self._rets[date])
             safe_alloc = safe_alloc*(1+self._daily_rf)
             account_value = risk_alloc + safe_alloc
 
-            # append to support lists
+            # append alle liste di supporto
             val_l += [account_value]
             floor_l += [floor]
 
-        # returns tuple of wealth value for each date and floor value at that date
+        # restituisce tupla di valore del ptf per ogni data e valore floor a quella data
         vals = pd.Series(val_l, index=self._bh.index)
         floors = pd.Series(floor_l, index=self._bh.index)
         return vals, floors
@@ -142,13 +158,13 @@ class CPPI(BaseBackTester):
         
         # figure settings
         if ax is None:
-            fig, ax = plt.subplots()
+            _, ax = plt.subplots()
         ax.set_xlabel('Date')
         ax.set_ylabel('Return')
         ax.set_title(self.__repr__())
 
         # plots
-        if self._rebalance != 'D':
+        if self._reb != 'D':
             ax.scatter(x=self._rebalancing, y=vals[self._rebalancing], marker='o', c='k', label='Reallocations')
         ax.fill_between(x=vals.index, y1=vals.values, y2=floor.values, color='gray', alpha=.5, label='Risk cushion')
         ax.plot(vals, color='coral', label='Strategy')
