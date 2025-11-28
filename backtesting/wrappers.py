@@ -85,4 +85,6 @@ def single_asset_portfolio(tickers: Tickers) -> Portfolio:
     :return: Portafoglio con un singolo asset e peso 1.
     :rtype: Portfolio
     """
+    if len(tickers.tickers) != 1:
+        raise ValueError("Tickers object must contain exactly one ticker for single asset portfolio.")
     return Portfolio(tickers, np.array([1.]))

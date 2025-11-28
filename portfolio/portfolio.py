@@ -1,3 +1,18 @@
+"""
+Modulo portfolio: gestione e analisi di portafogli di asset finanziari.
+Contiene le classi:
+- Tickers: data-centric container.
+- Portfolio: finance-centric implementazione di logiche finanziarie.
+
+Sviluppato da Samuele Voltan durante e dopo il corso
+"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
+
+Riferimenti:
+- https://www.edhec.edu/en
+- https://www.coursera.org/learn/introduction-portfolio-construction-python
+- https://www.paolocoletti.com/financialtrading
+"""
+
 import copy
 import numpy as np
 import pandas as pd
@@ -44,7 +59,7 @@ class Tickers:
             "VaR Cornish-Fischer (95%)": self.cornish_fischer_var(),
             "CVaR (95%)": self.expected_shortfall()
         })
-        return f"<h3>Summary for {', '.join(self.tickers)}</h3>" + summary.to_html()
+        return f"<h3>Summary for {', '.join(self.tickers)}</h3>" + summary.sort_index().to_html()
     
     def copy(self):
         return copy.copy(self)
@@ -224,6 +239,8 @@ class Portfolio:
         :param weights: Pesi associati agli asset del portafoglio.
         :type weights: Union[list, np.ndarray, pd.Series]
         """
+        if weights is not None and tickers.n_assets != len(weights):
+            raise ValueError("Tickers and weights must have the same length.")
         self._t = tickers
         self._w = weights
 
@@ -269,7 +286,7 @@ class Portfolio:
     def ptf_volatility(self) -> float:
         return (self.weights.T @ self.covmat @ self.weights)**0.5
 
-    def msr(self, rf: float = 0.03) -> Self:
+    def msr(self, rf: float=0.03) -> Self:
         """
         Maximum Sharpe Ratio.
         Metodo che modifica i pesi della classe al fine di ottenere il MSR Portfolio.
