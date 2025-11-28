@@ -1,3 +1,14 @@
+"""
+Module di implementazione della classe FMPProvider che fornisce dati sui prezzi dei titoli negoziati
+sul mercato tramite API e download dal sito FMP.
+
+Sviluppato da Samuele Voltan durante e dopo il corso
+"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
+
+Riferimenti:
+- https://financialmodelingprep.com
+"""
+
 import os
 from dotenv import load_dotenv
 import pandas as pd
