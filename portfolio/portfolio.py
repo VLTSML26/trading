@@ -17,11 +17,10 @@ import copy
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
-from typing import Union, Self
+from typing import Union, Self, Optional
 from marketdata.yfinance import YFinanceProvider
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
-# TODO 1: implementare possibilità di chiedere sia un periodo (con data fine = oggi) che data inizio e fine
 class Tickers:
     """
     Classe Tickers: è un catalogo di dati storici riferiti a una serie di asset
@@ -29,25 +28,48 @@ class Tickers:
     dell'analisi finanziaria per determinare i rendimenti e le statistiche di tali asset
     nel periodo di riferimento.
 
+    Viene invocata in due modi possibili:
+        1. Specificando un periodo storico (es: '1mo', '1y', '5y', 'max')
+        2. Specificando una data di inizio e una di fine in formato YYYY-MM-DD
+
     Importante: è un oggetto data-centric. Nessuna logica finanziaria.
     """
-    def __init__(self, tickers: Union[str, list[str]], period: str='1mo', provider=None):
+    def __init__(
+        self,
+        tickers: Union[str, list[str]],
+        period: Optional[str]=None,
+        start: Optional[str]=None,
+        end: Optional[str]=None,
+        provider=None
+    ):
         """
         Costruttore della classe Tickers.
         
         :param tickers: Lista di ticker o singolo ticker
         :type tickers: Union[str, list[str]]
         :param period: Periodo storico (es: '1mo', '1y', '5y')
-        :type period: str
+        :type period: Optional[str]
+        :param start: Data di inizio periodo storico in formato YYYY-MM-DD
+        :type start: Optional[str]
+        :param end: Data di fine periodo storico in formato YYYY-MM-DD
+        :type end: Optional[str]
         :param provider: Provider di dati (default: Yahoo Finance)
         :type provider: MarketDataProvider | None
         """
+        # controllo dell'input
+        if period and (start or end):
+            raise ValueError("Specify either 'period' or 'start'/'end', not both.")
+        if not period and not start:
+            raise ValueError("Must specify either 'period' or at least 'start'.")
+
         self.tickers = tickers if isinstance(tickers, list) else [tickers]
-        self._period = period
         self._provider = provider or YFinanceProvider()
 
-        # Scarico i dati attraverso il provider
-        self.df = self._provider.download(self.tickers, period).dropna()
+        # scarico i dati attraverso il provider
+        if period:
+            self.df = self._provider.download(self.tickers, period=period).dropna()
+        else:
+            self.df = self._provider.download(self.tickers, start_date=start, end_date=end).dropna()
     
     def _repr_html_(self):
         summary = pd.DataFrame({

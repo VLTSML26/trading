@@ -13,6 +13,7 @@ import os
 from dotenv import load_dotenv
 import pandas as pd
 import requests
+from typing import Optional
 from datetime import datetime
 from .base import MarketDataProvider
 
@@ -20,7 +21,6 @@ load_dotenv() # carica variabili d'ambiente da .env
 
 # TODO 1: implementare download asincroni
 # TODO 2: implementare download anche di prezzi di apertura, intraday (abbonamento free non so...)
-# TODO 3: scrivere funzioni di download che prendono anche date di inizio e fine pre-definite (attualmente fine = oggi)
 class FMPProvider(MarketDataProvider):
     """
     Provider per Financial Modeling Prep (FMP).
@@ -47,45 +47,83 @@ class FMPProvider(MarketDataProvider):
         self.timeout = timeout
         self.retry = retry
 
-    def download(self, tickers: list[str], period: str) -> pd.DataFrame:
+    def download(
+        self,
+        tickers: list[str],
+        period: Optional[str]=None,
+        start_date: Optional[str]=None,  
+        end_date: Optional[str]=None
+    ) -> pd.DataFrame:
         """
         Scarica i prezzi di chiusura per uno o più ticker.
         
+        Può essere usato in due modi:
+            1. Specificando `period` (es. '1y', '6mo')
+            2. Specificando `start_date` e `end_date` (es. '2024-01-01')
+
         :param tickers: Lista di nomi dei titoli.
         :type tickers: list[str]
-        :param period: Periodo di riferimento dei prezzi dei titoli.
-        :type period: str
+        :param period: Periodo di riferimento.
+        :type period: Optional[str]
+        :param start_date: Data di inizio periodo di riferimento.
+        :type start_date: Optional[str]
+        :param end_date: Data di fine periodo di riferimento.
+        :type end_date: Optional[str]
         :return: pandas DataFrame indicizzato con date.
         :rtype: DataFrame
         """
-        # conversione di period in una data di inizio
-        start_date = self._period_to_start_date(period)
+        # controllo dell'input (si potrebbe anche non fare se invoco sempre da Tickers... ma meglio farlo)
+        if period and (start_date or end_date):
+            raise ValueError("Specify either 'period' or 'start_date'/'end_date', not both.")
+        if not period and not start_date:
+            raise ValueError("Must specify either 'period' or at least 'start_date'.")
+        
+        # definizione delle date di inizio e fine da passare al metodo di download
+        if period:
+            start_date_dt = self._period_to_start_date(period)
+            end_date_dt = None
+        else:
+            """
+            # NOTE
+            Non è necessario implementare funzioni che escludano i giorni di chiusura del mercato, in
+            quanto il provider restituisce i dati a partire dal primo giorno di apertura antecedente
+            alla data richiesta e fino all'ultimo giorno di apertura antecedente alla data di fine richiesta.
+            """
+            start_date_dt = pd.to_datetime(start_date) if start_date else None
+            end_date_dt = pd.to_datetime(end_date) if end_date else None
 
-        # scarico ogni ticker singolarmente
+        # download di ogni ticker singolarmente
         all_closes = {}
         for ticker in tickers:
-            df_close = self._download_single(ticker, start_date)
+            df_close = self._download_single(ticker, start=start_date_dt, end=end_date_dt)
             all_closes[ticker] = df_close
 
         df = pd.concat(all_closes, axis=1) # combino in un unico DataFrame
         return df.sort_index()
 
-    def _download_single(self, ticker: str, start_date: datetime | None) -> pd.Series:
+    def _download_single(
+        self,
+        ticker: str,
+        start: datetime | None,
+        end: datetime | None
+    ) -> pd.Series:
         """
         Download tramite chiamata API dei dati di mercato di un singolo ticker dal provider.
         
         :param ticker: Ticker richeisto.
         :type ticker: str
-        :param start_date: Data di inizio serie storica richiesta.
-        :type start_date: datetime | None
+        :param start: Data di inizio serie storica richiesta.
+        :type start: datetime | None
+        :param end: Data di fine serie storica richiesta.
+        :type end: datetime | None
         :return: Prezzi di chiusura del ticker richiesto.
         :rtype: Series
         """
         params = {
             "symbol": ticker,
             "apikey": self._api_key,
-            "from": start_date.strftime("%Y-%m-%d") if start_date else None,
-            "to": None # TODO 3: implementare qua
+            "from": start.strftime("%Y-%m-%d") if start else None,
+            "to": end.strftime("%Y-%m-%d") if end else None
         }
 
         # tentativi di download dei dati con logiche di retry e timeout
@@ -124,9 +162,12 @@ class FMPProvider(MarketDataProvider):
         period = period.lower()
         today = pd.Timestamp.today()
 
-        # NOTE: per i giorni si usa pd.Timedelta, mentre per mesi e anni si usa pd.DateOffset.
-        # NOTE: Questo perché pd.DateOffset gestisce correttamente mesi/anni (inclusi anni bisestili),
-        # NOTE: mentre pd.Timedelta è adatto solo per intervalli di giorni.
+        """
+        # NOTE
+        Per i giorni si usa pd.Timedelta, mentre per mesi e anni si usa pd.DateOffset perché
+        pd.DateOffset gestisce correttamente mesi/anni (inclusi anni bisestili), mentre pd.Timedelta
+        è adatto solo per intervalli di giorni.
+        """
         if period == 'max':
             return None
         elif period.endswith("y"):
