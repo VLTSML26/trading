@@ -1,12 +1,12 @@
 """
-Module di implementazione della classe FMPProvider che fornisce dati sui prezzi dei titoli negoziati
-sul mercato tramite API e download dal sito FMP.
+Module di implementazione della classe AlphaVantageProvider che fornisce dati sui prezzi dei titoli
+negoziati sul mercato tramite API e download dal sito Alpha Vantage.
 
 Sviluppato da Samuele Voltan durante e dopo il corso
 "Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
 
 Riferimenti:
-- https://financialmodelingprep.com
+- https://www.alphavantage.co
 """
 
 import os
@@ -20,18 +20,17 @@ load_dotenv() # carica variabili d'ambiente da .env
 
 # TODO 1: implementare download asincroni
 # TODO 2: implementare download anche di prezzi di apertura, intraday (abbonamento free non so...)
-class FMPProvider(BaseProvider):
+class AlphaVantageProvider(BaseProvider):
     """
-    Provider per Financial Modeling Prep (FMP).
-    Legge i dati storici tramite API REST (endpoint historical-price-full).
+    Provider per Alpha Vantage.
+    Legge i dati storici tramite API REST.
     """
 
-    BASE_URL = "https://financialmodelingprep.com/stable/historical-price-eod/full"
-    DIVIDEND_ADJ_URL = "https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted"
+    BASE_URL = "https://www.alphavantage.co/query"
 
     def __init__(self, api_key: str=None, timeout: float=5.0, retry: int=3):
         """
-        Costruttore di FMPProvider.
+        Costruttore di AlphaVantageProvider.
         
         :param api_key: Chiave API (default=None, viene letta la variabile d'ambiente e solleva errore se non trovata).
         :type api_key: str
@@ -41,9 +40,9 @@ class FMPProvider(BaseProvider):
         :type retry: int
         """
         super().__init__(timeout=timeout, retry=retry)
-        self.api_key = api_key or os.getenv("FMP_API_KEY")
+        self.api_key = api_key or os.getenv("ALPHA_VANTAGE_API_KEY")
         if not self.api_key:
-            raise ValueError("Missing FMP API key.")
+            raise ValueError("Missing Alpha Vantage API key.")
 
     async def get_ticker(
         self,
@@ -64,12 +63,11 @@ class FMPProvider(BaseProvider):
         :return: Prezzi di chiusura del ticker richiesto.
         :rtype: Series
         """
-        # parametri standardizzati per le richieste HTTP
+        # parametri standardizzati per le richieste HTTP (Aplha Vantage non supporta filtri di data, li applicherò dopo)
         params = {
+            "function": "TIME_SERIES_DAILY", # TODO: poi implementare anche altre frequenze
             "symbol": ticker,
-            "apikey": self.api_key,
-            "from": time_params.get("start_date").strftime("%Y-%m-%d"),
-            "to": time_params.get("end_date").strftime("%Y-%m-%d")
+            "apikey": self.api_key
         }
         
         # download dei dati tramite richiesta HTTP
@@ -79,9 +77,13 @@ class FMPProvider(BaseProvider):
             raise RuntimeError(f"Download failure for ticker {ticker} from FMP.")
         
         # conversione in DataFrame pandas
-        df = pd.DataFrame(json_data)
-        df["date"] = pd.to_datetime(df["date"])
-        df.set_index("date", inplace=True)
+        time_series = json_data["Time Series (Daily)"]
+        close_prices = pd.Series({date: float(values["4. close"]) for date, values in time_series.items()})
+        close_prices.index = pd.to_datetime(close_prices.index)
+        
+        # filtro le date richieste
+        from_date = time_params.get("start_date").strftime("%Y-%m-%d")
+        to_date = time_params.get("end_date").strftime("%Y-%m-%d")
         
         # estrazione della serie dei prezzi di chiusura
-        return df["close"].rename(ticker)
+        return close_prices.rename(ticker).sort_index().loc[from_date:to_date]

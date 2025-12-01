@@ -2,7 +2,7 @@ import asyncio
 import aiohttp
 from datetime import datetime
 import pandas as pd
-from typing import Any, Dict
+from typing import Any
 from abc import ABC, abstractmethod
 
 # TODO 1: implementare logging.
