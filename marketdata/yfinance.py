@@ -14,9 +14,9 @@ Riferimenti:
 import yfinance as yf
 import pandas as pd
 from typing import Optional
-from .base import MarketDataProvider
+from .base import BaseProvider
 
-class YFinanceProvider(MarketDataProvider):
+class YFinanceProvider(BaseProvider):
     """
     Provider basato su Yahoo Finance tramite libreria yfinance.
     """

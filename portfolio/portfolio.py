@@ -54,7 +54,7 @@ class Tickers:
         :param end: Data di fine periodo storico in formato YYYY-MM-DD
         :type end: Optional[str]
         :param provider: Provider di dati (default: Yahoo Finance)
-        :type provider: MarketDataProvider | None
+        :type provider: BaseProvider | None
         """
         # controllo dell'input
         if period and (start or end):
