@@ -33,6 +33,8 @@ class BaseProvider(ABC):
     ) -> pd.Series:
         """
         Scarica i dati per un singolo ticker.
+        Questo metodo viene implementato diversamente da ogni provider con le rispettive logiche
+        di download.
         """
         pass
 
@@ -43,6 +45,13 @@ class BaseProvider(ABC):
     ) -> pd.DataFrame:
         """
         Scarica tutto l'archivio storico richiesto.
+
+        :param tickers: Lista di ticker da scaricare.
+        :type tickers: list[str]
+        :param kwargs: Parametri temporali (period, start/end date).
+        :type kwargs: dict
+        :return: DataFrame con i dati di mercato ottenuti (prezzi open, close, high, low).
+        :rtype: pd.DataFrame
         """
         # estrazione date di inizio e fine serie storica richiesta
         start, end = self.from_to(**kwargs)
