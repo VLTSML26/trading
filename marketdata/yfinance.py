@@ -11,62 +11,66 @@ Riferimenti:
 - https://ranaroussi.github.io/yfinance/
 """
 
-import yfinance as yf
+import aiohttp
+import asyncio
 import pandas as pd
-from typing import Optional
+import yfinance as yf
+from datetime import datetime
+from functools import partial
 from .base import BaseProvider
+from concurrent.futures import ThreadPoolExecutor
 
 class YFinanceProvider(BaseProvider):
     """
     Provider basato su Yahoo Finance tramite libreria yfinance.
+    Implementa il metodo get_ticker asincrono usando i download sincroni di yfinance (non direttamente API).
     """
-    def download(
+
+    def __init__(self, max_workers: int=10, **kwargs):
+        """
+        Costruttore per YFinanceProvider.
+        Non usa direttamente API REST, ma un executor che sfrutta i download sincroni di yfinance.
+        
+        :param max_workers: Numero massimo di thread per l'executor.
+        :type max_workers: int
+        """
+        super().__init__(**kwargs)
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+    
+    async def get_ticker(
         self,
-        tickers: list[str],
-        period: Optional[str]=None,
-        start_date: Optional[str]=None,  
-        end_date: Optional[str]=None
-    ) -> pd.DataFrame:
+        session: aiohttp.ClientSession,
+        ticker: str,
+        time_params: dict[datetime, datetime],  
+    ) -> pd.Series:
         """
-        Scarica i prezzi di chiusura per uno o più ticker da Yahoo Finance tramite yfinance.
+        Metodo per il download dei dati di mercato di un singolo ticker da Yahoo Finance.
+        Standardizza l'output come una Series di pandas con i prezzi di chiusura.
         
-        Può essere usato in due modi:
-            1. Specificando `period` (es. '1y', '6mo')
-            2. Specificando `start_date` e `end_date` (es. '2024-01-01')
-
-        :param tickers: Lista di nomi dei titoli.
-        :type tickers: list[str]
-        :param period: Periodo di riferimento.
-        :type period: Optional[str]
-        :param start_date: Data di inizio periodo di riferimento.
-        :type start_date: Optional[str]
-        :param end_date: Data di fine periodo di riferimento.
-        :type end_date: Optional[str]
-        :return: pandas DataFrame indicizzato con date.
-        :rtype: DataFrame
+        :param session: Sessione HTTP aiohttp.ClientSession.
+        :type session: aiohttp.ClientSession
+        :param ticker: Ticker richiesto.
+        :type ticker: str
+        :param time_params: Dizionario con chiavi "start_date" e "end_date" per la serie storica richiesta.
+        :type time_params: dict[datetime, datetime]
+        :return: Prezzi di chiusura del ticker richiesto.
+        :rtype: Series
         """
-        # controllo dell'input (si potrebbe anche non fare se invoco sempre da Tickers... ma meglio farlo)
-        if period and (start_date or end_date):
-            raise ValueError("Specify either 'period' or 'start_date'/'end_date', not both.")
-        if not period and not start_date:
-            raise ValueError("Must specify either 'period' or at least 'start_date'.")
-        
-        tickers = tickers if isinstance(tickers, list) else [tickers]
+        # uso functools.partial per creare una funzione parziale di yf.download con i parametri fissi
+        download_partial = partial(
+            yf.download,
+            ticker,
+            start=time_params.get("start_date").strftime("%Y-%m-%d"),
+            end=time_params.get("end_date").strftime("%Y-%m-%d"),
+            progress=False,
+            auto_adjust=True
+        )
 
-        if period:
-            df = yf.download(tickers, period=period, auto_adjust=True, group_by="ticker")
-        else:
-            # siccome yfinance usa la end_date in maniera esclusiva, la incremento di un giorno
-            if end_date:
-                end_date = (pd.to_datetime(end_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-            df = yf.download(tickers, start=start_date, end=end_date, auto_adjust=True, group_by="ticker")
-        
-        # caso singolo asset: df è un MultiIndex diverso
-        if len(tickers) == 1:
-            df.columns = df.columns.droplevel(0)  # rimuovi livello ticker
-            return df["Close"].to_frame(tickers[0]).dropna()
+        # creo loop ed eseguo i download sincroni con i workers dell'executor
+        loop = asyncio.get_event_loop()
+        df = await loop.run_in_executor(self.executor, download_partial)
 
-        # multi-asset
-        closes = df.loc[:, pd.IndexSlice[:, "Close"]]
-        closes.columns = [c[0] for c in closes.columns]
-        return closes.dropna()
+        # standardizzo l'output come Series con i prezzi di chiusura e restituisco
+        series = df["Close"]
+        series.name = ticker
+        return series.dropna()

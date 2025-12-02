@@ -29,7 +29,7 @@ class FMPProvider(BaseProvider):
     BASE_URL = "https://financialmodelingprep.com/stable/historical-price-eod/full"
     DIVIDEND_ADJ_URL = "https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted"
 
-    def __init__(self, api_key: str=None, timeout: float=5.0, retry: int=3):
+    def __init__(self, api_key: str=None, **kwargs):
         """
         Costruttore di FMPProvider.
         
@@ -40,7 +40,7 @@ class FMPProvider(BaseProvider):
         :param retry: Numero di tentativi in caso di failure.
         :type retry: int
         """
-        super().__init__(timeout=timeout, retry=retry)
+        super().__init__(**kwargs)
         self.api_key = api_key or os.getenv("FMP_API_KEY")
         if not self.api_key:
             raise ValueError("Missing FMP API key.")
@@ -55,12 +55,12 @@ class FMPProvider(BaseProvider):
         Metodo per il download tramite chiamata API dei dati di mercato di un singolo ticker da FMP.
         Standardizza l'output come una Series di pandas con i prezzi di chiusura.
         
-        :param ticker: Ticker richeisto.
+        :param session: Sessione HTTP aiohttp.ClientSession.
+        :type session: aiohttp.ClientSession
+        :param ticker: Ticker richiesto.
         :type ticker: str
-        :param start: Data di inizio serie storica richiesta.
-        :type start: datetime
-        :param end: Data di fine serie storica richiesta.
-        :type end: datetime
+        :param time_params: Dizionario con chiavi "start_date" e "end_date" per la serie storica richiesta.
+        :type time_params: dict[datetime, datetime]
         :return: Prezzi di chiusura del ticker richiesto.
         :rtype: Series
         """
