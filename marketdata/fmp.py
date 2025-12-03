@@ -82,6 +82,9 @@ class FMPProvider(BaseProvider):
         df = pd.DataFrame(json_data)
         df["date"] = pd.to_datetime(df["date"])
         df.set_index("date", inplace=True)
+
+        df = df[["open", "high", "low", "close"]]
         
         # estrazione della serie dei prezzi di chiusura
-        return df["close"].rename(ticker)
+        df.columns = pd.MultiIndex.from_product([[ticker], df.columns])
+        return df
