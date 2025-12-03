@@ -17,7 +17,7 @@ import copy
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
-from typing import Union, Self, Optional
+from typing import Union, Self, Any, Optional
 from marketdata.yfinance import YFinanceProvider
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
@@ -63,13 +63,13 @@ class Tickers:
             raise ValueError("Must specify either 'period' or at least 'start'.")
 
         self.tickers = tickers if isinstance(tickers, list) else [tickers]
-        self._provider = provider or YFinanceProvider()
+        self.provider = provider or YFinanceProvider()
 
         # scarico i dati attraverso il provider
         if period:
-            self.df = self._provider.download(self.tickers, period=period).dropna()
+            self.df = self.provider.download(self.tickers, period=period)
         else:
-            self.df = self._provider.download(self.tickers, start_date=start, end_date=end).dropna()
+            self.df = self.provider.download(self.tickers, start_date=start, end_date=end)
     
     def _repr_html_(self):
         summary = pd.DataFrame({
@@ -86,82 +86,129 @@ class Tickers:
     def copy(self):
         return copy.copy(self)
     
-    # TODO: da re-implementare dopo che non eredito più da yfinance.Tickers
-    # @property
-    # def _all_prices_df(self) -> pd.DataFrame:
-    #     """
-    #     Attributo privato: dataframe con tutti i prezzi (non solo chiusura, anche apertura, max e min)
-    #     utilizzato per invocare il metodo del diagramma a candela.
-    #     """
-    #     return self.history(period=self._period).dropna()
+    @property
+    def close(self) -> pd.DataFrame:
+        """
+        Prezzi di chiusura di tutti i ticker: è una tabella n_assets x n_date.
+        Rispetto a self.df (dati scaricati dal provider) rimuove la dimensione MultiIndex delle
+        colonne selezionando solamente i prezzi di chiusura.
+
+        :return: DataFrame con i prezzi di chiusura.
+        :rtype: pd.DataFrame
+        """
+        return self.df.xs('close', axis=1, level=-1)
     
     @property
     def n_assets(self) -> int:
         """
         Numero di ticker (o assets) scaricati e presenti nel dataframe.
         """
-        return len(self.df.columns)
+        return len(self.close.columns)
     
     @property
     def daily_returns(self) -> pd.DataFrame:
         """
         Rendimento giornaliero per ogni data della serie storica.
+
+        :return: DataFrame della stessa dimensione e caratteristiche di self.close
+        :rtype: pd.DataFrame
         """
-        return self.df.pct_change()
+        return self.close.pct_change()
     
     @property
-    def returns(self) -> pd.DataFrame:
+    def daily_volatility(self) -> pd.Series:
+        """
+        Restituisce la volatilità calcolata sui rendimenti giornalieri (da qui il "daily").
+        
+        :return: Serie con la volatilità di ogni ticker.
+        :rtype: pd.Series
+        """
+        return self.daily_returns.std(ddof=0)
+    
+    @property
+    def comp_returns(self) -> pd.DataFrame:
         """
         Rendimento composto calcolato per ogni data della serie storica partendo dall'inizio
         del periodo di osservazione.
+
+        :return: DataFrame della stessa dimensione e caratteristiche di self.close
+        :rtype: pd.DataFrame
         """
-        return np.expm1(np.log1p(self.daily_returns).cumsum()) # TODO: check this
+        return np.expm1(np.log1p(self.daily_returns).cumsum())
+    
+    @property
+    def annual_returns(self) -> pd.Series:
+        """
+        Rendimenti annui calcolati proiettando i rendimenti composti ottenuti durante il periodo di osservazione.
+
+        :return: Serie con i rendimenti annui di ogni ticker.
+        :rtype: pd.Series
+        """
+        days_passed = (self.close.index[-1] - self.close.index[0]).days
+        last_row = (self.comp_returns[-1:]+1)**(365.24/days_passed)-1
+        rets = last_row.iloc[0]
+        rets.name = "Annualized returns"
+        return rets
+    
+    @property
+    def annual_volatility(self) -> pd.Series:
+        """
+        Volatilità annua calcolata proiettando la volatilità calcolata sui rendimenti giornalieri.
+
+        :return: Serie con la volatilità annua di ogni ticker.
+        :rtype: pd.Series
+        """
+        vol = self.daily_returns.std(ddof=0) * np.sqrt(252)
+        vol.name = "Annualized volatility"
+        return vol
+    
+    @property
+    def return_on_risk(self) -> pd.Series:
+        """
+        Rapporto tra rendimento annuo e volatilità annua.
+        
+        :return: Serie con il return on risk di ogni ticker.
+        :rtype: pd.Series
+        """
+        return self.annual_returns / self.annual_volatility
+    
+    @property
+    def skewness(self) -> pd.Series:
+        return self.close.skew() # FIXME: sicuro che non si debba calcolare sui rendimenti?
+    
+    @property
+    def kurtosis(self) -> pd.Series:
+        return self.close.kurtosis() # FIXME: sicuro che non si debba calcolare sui rendimenti?
     
     @property
     def drawdown(self) -> pd.DataFrame:
         """
         Drawdown giornaliero calcolato per ogni data della serie storica.
+
+        :return: DataFrame della stessa dimensione e caratteristiche di self.close
+        :rtype: pd.DataFrame
         """
-        return self.returns.cummax()-self.returns
-    
-    @property
-    def comp_returns(self) -> pd.Series:
-        """
-        Rendimento composto dall'inizio del periodo di osservazione calcolato su
-        tutto il periodo.
-        """
-        return np.expm1(np.log1p(self.daily_returns).sum()) # TODO: check this
-    
-    @property
-    def daily_volatility(self) -> pd.Series:
-        return self.daily_returns.std(ddof=0)
-    
-    @property
-    def annual_returns(self) -> pd.Series:
-        days_passed = (self.df.index[-1] - self.df.index[0]).days
-        return (self.comp_returns+1)**(365.24/days_passed)-1
-    
-    @property
-    def annual_volatility(self) -> pd.Series:
-        return self.daily_returns.std(ddof=0) * np.sqrt(252)
-    
-    @property
-    def skewness(self) -> pd.Series:
-        return self.df.skew()
-    
-    @property
-    def kurtosis(self) -> pd.Series:
-        return self.df.kurtosis()
-    
-    @property
-    def return_on_risk(self) -> pd.Series:
-        return self.annual_returns / self.annual_volatility
+        return self.comp_returns.cummax()-self.comp_returns
     
     @property
     def max_drawdown(self) -> pd.Series:
+        """
+        Massimo drawdown giornaliero calcolato sul periodo di osservazione.
+        
+        :return: Serie con il massimo drawdown giornaliero di ogni ticker.
+        :rtype: pd.Series
+        """
         return self.drawdown.max()
     
     def sharpe_ratio(self, rf: float=0.03) -> pd.Series:
+        """
+        Sharpe Ratio (return on risk modificato per il tasso di redimento risk-free).
+        
+        :param rf: Tasso di rendimento risk-free
+        :type rf: float
+        :return: Serie con lo Sharpe Ratio di ogni ticker.
+        :rtype: pd.Series
+        """
         return (self.annual_returns - rf) / self.annual_volatility
     
     def measured_var(self, level: float=0.95) -> pd.Series:
@@ -199,7 +246,7 @@ class Tickers:
     def expected_shortfall(self, level: float=0.95) -> pd.Series:
         var_threshold = self.daily_returns.quantile(level)
         return -self.daily_returns[self.daily_returns < var_threshold].mean()
-
+    
     def plot(self, rescale: bool=True, *args, **kwargs) -> axes.Axes:
         """
         Metodo di visualizzazione del valore dei titoli presenti nell'istanza invocata.
@@ -250,123 +297,127 @@ class Portfolio:
     
     Importante: è un oggetto finance-centric. Implementa logica finanziaria.
     """
-    _WEIGHT_BOUNDS = ((0., 1.),)
+    WEIGHT_BOUNDS = ((0., 1.),)
 
-    def __init__(self, tickers: Tickers, weights: Union[list, np.ndarray, pd.Series]=None):
+    def __init__(self, tickers: Tickers, weights: Any=None):
         """
-        Costruttore di Portfoio
+        Costruttore di Portfolio.
         
         :param tickers: Oggeto tickers contenente gli asset del portafoglio.
         :type tickers: Tickers
         :param weights: Pesi associati agli asset del portafoglio.
         :type weights: Union[list, np.ndarray, pd.Series]
         """
-        if weights is not None and tickers.n_assets != len(weights):
+        self.tickers = tickers
+        self.weights = self.validate_weights(weights)
+    
+    def validate_weights(self, weights: Union[list, pd.Series, np.ndarray, None]) -> pd.Series:
+        """
+        Validazione dei pesi passati al costruttore.
+        """
+        # se weights è None, equally weighted portfolio
+        weights = np.repeat(1/self.tickers.n_assets, self.tickers.n_assets) if weights is None else weights
+        
+        # formattazione pesi a pd.Series
+        weights_s = pd.Series(weights, index=self.tickers.tickers) if not isinstance(weights, pd.Series) else weights
+
+        # controllo su coerenza num. titoli e pesi forniti
+        if self.tickers.n_assets != len(weights_s):
             raise ValueError("Tickers and weights must have the same length.")
-        self._t = tickers
-        self._w = weights
 
-    @property
-    def weights(self) -> pd.Series:
-        if self._w is None:
-            self._w = np.repeat(1/self._t.n_assets, self._t.n_assets)
-            return self.weights
-        elif isinstance(self._w, list):
-            return pd.Series(self._w, index=self._t.tickers)
-        elif isinstance(self._w, np.ndarray):
-            return pd.Series(self._w, index=self._t.tickers)
-        else:
-            return self._w
+        # controllo su normalizzazione pesi
+        if not np.isclose(weights_s.sum(), 1.):
+            # non sollevo errori ma semplicemente normalizzo
+            weights_s /= weights_s.sum()
 
-    @weights.setter
-    def weights(self, new_value: Union[list, np.ndarray, pd.Series]) -> None:
-        if not all(lower <= val <= upper for (lower, upper), val in zip(self._WEIGHT_BOUNDS*len(new_value), new_value)):
+        # controllo sui limiti dei pesi tra 0 e 1
+        # NOTE: logicamente questo controllo deve esser fatto dopo il precedente
+        lowbound, upbound = self.WEIGHT_BOUNDS[0]
+        if (weights_s < lowbound).any() or (weights_s > upbound).any():
             raise ValueError("Each weight must be a number between 0 and 1.")
-        if len(new_value) != self._t.n_assets:
-            raise ValueError("New weights must be equal to the number of assets in the portfolio.")
-        if not np.isclose(sum(new_value), 1.0):
-            new_value = [nv / sum(new_value) for nv in new_value]
-        self._w = new_value
+        
+        return weights_s
 
     @property
     def ptf_return(self) -> float:
-        return self.weights.T @ self._t.annual_returns
+        return self.weights.T @ self.tickers.annual_returns
     
     @property
     def ptf_comp_returns(self) -> pd.Series:
-        return self._t.returns @ self.weights
+        return self.tickers.comp_returns @ self.weights
     
     @property
     def ptf_daily_returns(self) -> pd.Series:
-        return self._t.daily_returns @ self.weights
+        return self.tickers.daily_returns @ self.weights
     
     @property
     def covmat(self) -> pd.DataFrame:
-        return self._t.daily_returns.cov()
+        return self.tickers.daily_returns.cov()
 
     @property
     def ptf_volatility(self) -> float:
-        return (self.weights.T @ self.covmat @ self.weights)**0.5
-
-    def msr(self, rf: float=0.03) -> Self:
-        """
-        Maximum Sharpe Ratio.
-        Metodo che modifica i pesi della classe al fine di ottenere il MSR Portfolio.
-        
-        :param rf: Tasso risk-free di riferimento.
-        :type rf: float
-        :return: Restituisce la classe stessa, con i pesi modificati per MSR.
-        :rtype: Self
-        """
-        # funzione da minimizzare (sharpe ratio negativo)
-        def to_min(w):
+        try:
             # prova decomposizione di Cholesky per aumentare performance
-            try:
-                chol = la.cholesky(self.covmat)
-                y = chol.T @ w
-                return (rf - w.T @ self._t.annual_returns) / (y.T @ y)**0.5
-            # a volte non riesce (qualche minore non definito positivo per errori numerici)
-            except la.LinAlgError:
-                # in questo caso fa il calcolo più pesante senza la Cholesky
-                return (rf - w.T @ self._t.annual_returns) / (self.weights.T @ self.covmat @ self.weights)**0.5
-        
-        # funzione di constraint sui pesi e di reset dell'attributo della classe
-        def update_w_and_sum_to_1(w):
-            self.weights = w # reset attributo col setter
-            return np.sum(w) - 1 # constraint
-        
-        # massimizzazione sharpe ratio
-        from scipy.optimize import minimize
-        _ = minimize(
-            to_min,
-            self.weights.values,
-            method='SLSQP',
-            options={'disp': False},
-            constraints=({'type': 'eq', 'fun': update_w_and_sum_to_1}),
-            bounds=self._WEIGHT_BOUNDS*self._t.n_assets 
-        )
-        return self
+            chol = la.cholesky(self.covmat)
+            y = chol.T @ self.weights
+            return (y.T @ y)**0.5
+        except la.LinAlgError:
+            # in questo caso fa il calcolo più pesante senza la Cholesky
+            return (self.weights.T @ self.covmat @ self.weights)**0.5
+    
+    def ptf_sharpe_ratio(self, rf: float=0.03) -> float:
+        """
+        Sharpe ratio del portafoglio.
+        """
+        return (self.ptf_return - rf) / self.ptf_volatility
 
-    def gmv(self) -> Self:
-        """
-        Global Minimum Variance.
-        Metodo che modifica i pesi del portafoglio per minimizzare la varianza.
-        Si mostra che tale portafoglio è il MSR con tasso risk-free posto a 0.
-        
-        :return: Restituisce la classe stessa, con i pesi modificati per GMV.
-        :rtype: Self
-        """
-        return self.msr(rf=0.)
+def get_msr(ptf: Portfolio, rf: float=0.03) -> Portfolio:
+    """
+    Maximum Sharpe Ratio.
+    Metodo che, partendo da un Portfolio e un tasso risk-free, restituisce il MSR Portfolio,
+    ovvero il Portfolio generato con la configurazione di pesi che massimizza lo Sharpe-Ratio.
+    
+    :param ptf: Portafoglio sul quale performare il metodo di massimizzazione dello Sharpe-Ratio.
+    :type ptf: Portfolio
+    :param rf: Tasso risk-free di riferimento.
+    :type rf: float
+    :return: Restituisce un nuovo oggetto Portfolio istanziato con i Tickers del portafoglio originale
+        e con i pesi calcolati in maniera tale da massimizzare lo SR.
+    :rtype: Portfolio
+    """
+    # funzione da minimizzare (sharpe ratio negativo)
+    def negative_sharpe_ratio(w):
+        try_ptf = Portfolio(ptf.tickers, w)
+        return -try_ptf.ptf_sharpe_ratio(rf=rf)
+    
+    # funzione di constraint (normalizzazione pesi)
+    def normalization(w):
+        return np.sum(w) - 1
+    
+    # massimizzazione sharpe ratio
+    from scipy.optimize import minimize
+    new_weights = minimize(
+        negative_sharpe_ratio,
+        ptf.weights.values,
+        method='SLSQP',
+        options={'disp': False},
+        constraints=({'type': 'eq', 'fun': normalization}),
+        bounds=ptf.WEIGHT_BOUNDS*ptf.tickers.n_assets 
+    )
+    return Portfolio(ptf.tickers, new_weights.x)
 
-    def ew(self) -> Self:
-        """
-        Equally Weighted portfolio.
-        
-        :return: Restituisce la classe stessa, con i pesi modificati per EW.
-        :rtype: Self
-        """
-        self._w = None
-        return self
+def get_gmv(ptf: Portfolio) -> Portfolio:
+    """
+    Global Minimum Variance.
+    Metodo che modifica i pesi del portafoglio per minimizzare la varianza.
+    """
+    return get_msr(ptf, rf=0.) # si mostra che GMV = MSR(rf: 0)
+
+def get_ew(ptf: Portfolio) -> Portfolio:
+    """
+    Equally Weighted portfolio.
+    """
+    return Portfolio(ptf.tickers, None)
 
 # TODO: eventualmente creare una classe per la frontiera efficiente anche vedendo cosa segue nel corso di EDHEC
 def efficient_frontier(
