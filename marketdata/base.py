@@ -25,16 +25,46 @@ class BaseProvider(ABC):
         self.retry = retry
 
     @abstractmethod
-    async def get_ticker(
+    async def get_ohlcv(
         self,
         session: aiohttp.ClientSession,
         ticker: str,
         time_params: dict[datetime, datetime]
     ) -> pd.Series:
         """
-        Scarica i dati per un singolo ticker.
-        Questo metodo viene implementato diversamente da ogni provider con le rispettive logiche
-        di download.
+        Scarica i dati OHLCV (Open, High, Low, Close, Volume) giornalieri per un singolo ticker e
+        standardizza l'output.
+        
+        :param session: Sessione HTTP.
+        :type session: aiohttp.ClientSession
+        :param ticker: Ticker richiesto.
+        :type ticker: str
+        :param time_params: Dizionario con chiavi "start_date" e "end_date" per la serie storica richiesta.
+        :type time_params: dict[datetime, datetime]
+        :return: Dati OHLCV del ticker richiesto.
+        :rtype: pd.DataFrame
+        """
+        pass
+
+    @abstractmethod
+    async def get_marketcap(
+        self,
+        session: aiohttp.ClientSession,
+        ticker: str,
+        time_params: dict[datetime, datetime]
+    ) -> pd.DataFrame:
+        """
+        Scarica la capitalizzazione storica del ticker richiesto per le date inserite e standardizza
+        l'output come un pd.DataFrame.
+
+        :param session: Sessione HTTP.
+        :type session: aiohttp.ClientSession
+        :param ticker: Ticker richiesto.
+        :type ticker: str
+        :param time_params: Dizionario con chiavi "start_date" e "end_date" per la serie storica richiesta.
+        :type time_params: dict[datetime, datetime]
+        :return: Market Cap del ticker richiesto.
+        :rtype: pd.DataFrame
         """
         pass
 
@@ -62,11 +92,12 @@ class BaseProvider(ABC):
 
         # esecuzione delle richieste asincrone in parallelo
         async with aiohttp.ClientSession() as session:
-            tasks = [self.get_ticker(session, ticker, time_params) for ticker in tickers]
+            tasks = [self.get_ohlcv(session, ticker, time_params) for ticker in tickers]
+            tasks += [self.get_marketcap(session, ticker, time_params) for ticker in tickers]
             results = await asyncio.gather(*tasks)
-
+        
         # combinazione dei risultati in un unico DataFrame
-        return pd.concat(results, axis=1).sort_index()
+        return pd.concat(results, axis=1).sort_index(axis=1)
     
     def from_to(self, **kwargs):
         """

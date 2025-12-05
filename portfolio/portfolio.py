@@ -21,6 +21,7 @@ from typing import Union, Self, Any, Optional
 from marketdata.yfinance import YFinanceProvider
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
+WEIGHT_BOUNDS = ((0., 1.),)
 class Tickers:
     """
     Classe Tickers: è un catalogo di dati storici riferiti a una serie di asset
@@ -96,7 +97,18 @@ class Tickers:
         :return: DataFrame con i prezzi di chiusura.
         :rtype: pd.DataFrame
         """
-        return self.df.xs('close', axis=1, level=-1)
+        # NOTE: dropna si rende utile siccome df ha sempre dati aggiornati a oggi (colpa di marketCap)
+        return self.df.xs('close', axis=1, level=-1).dropna()
+    
+    @property
+    def last_mkcap(self) -> pd.Series:
+        """
+        Restituisce l'ultimo dato disponibile sulla capitalizzazione dei titoli.
+        """
+        # NOTE: funzione utile soltanto poichè il provider FMP non fornisce tutto lo storico nella versione free
+        mkcap = self.df.xs('marketCap', axis=1, level=-1).iloc[-1]
+        mkcap.name = 'Market CAP'
+        return mkcap
     
     @property
     def n_assets(self) -> int:
@@ -174,11 +186,11 @@ class Tickers:
     
     @property
     def skewness(self) -> pd.Series:
-        return self.close.skew() # FIXME: sicuro che non si debba calcolare sui rendimenti?
+        return self.daily_returns.skew()
     
     @property
     def kurtosis(self) -> pd.Series:
-        return self.close.kurtosis() # FIXME: sicuro che non si debba calcolare sui rendimenti?
+        return self.daily_returns.kurtosis()
     
     @property
     def drawdown(self) -> pd.DataFrame:
@@ -297,9 +309,8 @@ class Portfolio:
     
     Importante: è un oggetto finance-centric. Implementa logica finanziaria.
     """
-    WEIGHT_BOUNDS = ((0., 1.),)
 
-    def __init__(self, tickers: Tickers, weights: Any=None):
+    def __init__(self, tickers: Tickers, weights: Any=None, name: str=None):
         """
         Costruttore di Portfolio.
         
@@ -310,6 +321,17 @@ class Portfolio:
         """
         self.tickers = tickers
         self.weights = self.validate_weights(weights)
+        self.name = name
+    
+    # BUG: must pass an index (rivedere tutta la funzione)
+    def _repr_html_(self):
+        summary = pd.DataFrame({
+            "Annualized returns": self.annual_return,
+            "Annualized volatility": self.annual_volatility,
+            "Max drawdown": self.max_drawdown,
+            "Sharpe Ratio (3%)": self.sharpe_ratio()
+        })
+        return f"<h3>Summary for {self.name} portfolio</h3>" + summary.sort_index().to_html()
     
     def validate_weights(self, weights: Union[list, pd.Series, np.ndarray, None]) -> pd.Series:
         """
@@ -332,30 +354,63 @@ class Portfolio:
 
         # controllo sui limiti dei pesi tra 0 e 1
         # NOTE: logicamente questo controllo deve esser fatto dopo il precedente
-        lowbound, upbound = self.WEIGHT_BOUNDS[0]
+        lowbound, upbound = WEIGHT_BOUNDS[0]
         if (weights_s < lowbound).any() or (weights_s > upbound).any():
             raise ValueError("Each weight must be a number between 0 and 1.")
         
         return weights_s
 
     @property
-    def ptf_return(self) -> float:
+    def daily_returns(self) -> pd.Series:
+        """
+        Rendimenti giornalieri del portafoglio per ogni data della serie storica.
+        """
+        return self.tickers.daily_returns @ self.weights
+
+    @property
+    def comp_returns(self) -> pd.Series:
+        """
+        Rendimenti composti del portafoglio sul periodo di osservazione (data per data).
+        """
+        return self.tickers.comp_returns @ self.weights
+
+    @property
+    def annual_return(self) -> float:
+        """
+        Rendimento annualizzato del portafoglio.
+        """
         return self.weights.T @ self.tickers.annual_returns
     
     @property
-    def ptf_comp_returns(self) -> pd.Series:
-        return self.tickers.comp_returns @ self.weights
+    def return_on_risk(self) -> float:
+        """
+        Rapporto tra rendimento annuo e volatilità annua.
+        """
+        return self.annual_return / self.annual_volatility
     
     @property
-    def ptf_daily_returns(self) -> pd.Series:
-        return self.tickers.daily_returns @ self.weights
+    def drawdown(self) -> pd.Series:
+        """
+        Drawdown giornaliero calcolato per ogni data della serie storica.
+        """
+        return self.comp_returns.cummax()-self.comp_returns
+    
+    @property
+    def max_drawdown(self) -> float:
+        """
+        Massimo drawdown giornaliero calcolato sul periodo di osservazione.
+        """
+        return self.drawdown.max()
     
     @property
     def covmat(self) -> pd.DataFrame:
+        """
+        Matrice di covarianza calcolata con correlazioni e varianze del campione di titoli in portafoglio.
+        """
         return self.tickers.daily_returns.cov()
 
     @property
-    def ptf_volatility(self) -> float:
+    def daily_volatility(self) -> float:
         try:
             # prova decomposizione di Cholesky per aumentare performance
             chol = la.cholesky(self.covmat)
@@ -365,59 +420,69 @@ class Portfolio:
             # in questo caso fa il calcolo più pesante senza la Cholesky
             return (self.weights.T @ self.covmat @ self.weights)**0.5
     
-    def ptf_sharpe_ratio(self, rf: float=0.03) -> float:
+    @property
+    def annual_volatility(self) -> float:
+        return self.daily_volatility * np.sqrt(252)
+    
+    def sharpe_ratio(self, rf: float=0.03) -> float:
         """
         Sharpe ratio del portafoglio.
         """
-        return (self.ptf_return - rf) / self.ptf_volatility
+        return (self.annual_return - rf) / self.annual_volatility
 
-def get_msr(ptf: Portfolio, rf: float=0.03) -> Portfolio:
+def get_msr(tickers: Tickers, rf: float=0.03) -> Portfolio:
     """
-    Maximum Sharpe Ratio.
-    Metodo che, partendo da un Portfolio e un tasso risk-free, restituisce il MSR Portfolio,
-    ovvero il Portfolio generato con la configurazione di pesi che massimizza lo Sharpe-Ratio.
+    Dato un oggetto Tickers (insieme di titoli) restituisce il MSR (Max Sharpe-Ratio) Portfolio.
     
-    :param ptf: Portafoglio sul quale performare il metodo di massimizzazione dello Sharpe-Ratio.
-    :type ptf: Portfolio
+    :param tickers: Insieme di titoli dai quali costruire il MSR Portfolio.
+    :type tickers: Tickers
     :param rf: Tasso risk-free di riferimento.
     :type rf: float
-    :return: Restituisce un nuovo oggetto Portfolio istanziato con i Tickers del portafoglio originale
-        e con i pesi calcolati in maniera tale da massimizzare lo SR.
+    :return: Oggetto Portfolio costruito con i titoli di Tickers ed i pesi che massimizzano lo SR.
     :rtype: Portfolio
     """
     # funzione da minimizzare (sharpe ratio negativo)
     def negative_sharpe_ratio(w):
-        try_ptf = Portfolio(ptf.tickers, w)
-        return -try_ptf.ptf_sharpe_ratio(rf=rf)
+        try_ptf = Portfolio(tickers, w)
+        return -try_ptf.sharpe_ratio(rf=rf)
     
     # funzione di constraint (normalizzazione pesi)
     def normalization(w):
         return np.sum(w) - 1
     
+    # configurazione iniziale dei pesi
+    w0 = np.repeat(1/tickers.n_assets, tickers.n_assets)
+
     # massimizzazione sharpe ratio
     from scipy.optimize import minimize
     new_weights = minimize(
         negative_sharpe_ratio,
-        ptf.weights.values,
+        w0,
         method='SLSQP',
         options={'disp': False},
         constraints=({'type': 'eq', 'fun': normalization}),
-        bounds=ptf.WEIGHT_BOUNDS*ptf.tickers.n_assets 
+        bounds=WEIGHT_BOUNDS*tickers.n_assets 
     )
-    return Portfolio(ptf.tickers, new_weights.x)
+    return Portfolio(tickers, new_weights.x)
 
-def get_gmv(ptf: Portfolio) -> Portfolio:
+def get_gmv(tickers: Tickers) -> Portfolio:
     """
-    Global Minimum Variance.
-    Metodo che modifica i pesi del portafoglio per minimizzare la varianza.
+    Dato un oggetto Tickers (insieme di titoli) restituisce il GMV (Global Minimum Variance) Portfolio.
     """
-    return get_msr(ptf, rf=0.) # si mostra che GMV = MSR(rf: 0)
+    return get_msr(tickers, rf=0.) # si mostra che GMV = MSR(rf: 0)
 
-def get_ew(ptf: Portfolio) -> Portfolio:
+def get_ew(tickers: Tickers) -> Portfolio:
     """
-    Equally Weighted portfolio.
+    Dato un oggetto Tickers (insieme di titoli) restituisce il EW (Equally Weighted) Portfolio.
     """
-    return Portfolio(ptf.tickers, None)
+    return Portfolio(tickers, None) # sfrutta le proprietà del costruttore di Portfolio
+
+def get_capw(tickers: Tickers) -> Portfolio:
+    """
+    Dato un oggetto Tickers (insieme di titoli) restituisce il CW (Cap Weighted) Portfolio.
+    """
+    weights = tickers.last_mkcap / tickers.last_mkcap.sum()
+    return Portfolio(tickers, weights)
 
 # TODO: eventualmente creare una classe per la frontiera efficiente anche vedendo cosa segue nel corso di EDHEC
 def efficient_frontier(

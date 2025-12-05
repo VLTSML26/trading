@@ -26,7 +26,8 @@ class FMPProvider(BaseProvider):
     Legge i dati storici tramite API REST (endpoint historical-price-full).
     """
 
-    BASE_URL = "https://financialmodelingprep.com/stable/historical-price-eod/full"
+    OHLCV_ENDPOINT = 'https://financialmodelingprep.com/stable/historical-price-eod/full'
+    MARKETCAP_ENDPOINT = 'https://financialmodelingprep.com/stable/historical-market-capitalization'
     DIVIDEND_ADJ_URL = "https://financialmodelingprep.com/stable/historical-price-eod/dividend-adjusted"
 
     def __init__(self, api_key: str=None, **kwargs):
@@ -45,26 +46,16 @@ class FMPProvider(BaseProvider):
         if not self.api_key:
             raise ValueError("Missing FMP API key.")
 
-    async def get_ticker(
+    async def get_ohlcv(
         self,
         session: aiohttp.ClientSession,
         ticker: str,
         time_params: dict[datetime, datetime]
-    ) -> pd.Series:
+    ) -> pd.DataFrame:
         """
-        Metodo per il download tramite chiamata API dei dati di mercato di un singolo ticker da FMP.
-        Standardizza l'output come una Series di pandas con i prezzi di chiusura.
-        
-        :param session: Sessione HTTP aiohttp.ClientSession.
-        :type session: aiohttp.ClientSession
-        :param ticker: Ticker richiesto.
-        :type ticker: str
-        :param time_params: Dizionario con chiavi "start_date" e "end_date" per la serie storica richiesta.
-        :type time_params: dict[datetime, datetime]
-        :return: Prezzi di chiusura del ticker richiesto.
-        :rtype: Series
+        Implementa metodo astratto di BaseProvider per i dati OHLCV secondo i parametri di FMP.
         """
-        # parametri standardizzati per le richieste HTTP
+        # parametri della richiesta HTTP
         params = {
             "symbol": ticker,
             "apikey": self.api_key,
@@ -73,7 +64,7 @@ class FMPProvider(BaseProvider):
         }
         
         # download dei dati tramite richiesta HTTP
-        json_data = await self.http_request(session, self.BASE_URL, params)
+        json_data = await self.http_request(session, self.OHLCV_ENDPOINT, params)
         # TODO: qui migliorare l'error handling
         if not json_data:
             raise RuntimeError(f"Download failure for ticker {ticker} from FMP.")
@@ -83,8 +74,37 @@ class FMPProvider(BaseProvider):
         df["date"] = pd.to_datetime(df["date"])
         df.set_index("date", inplace=True)
 
+        # standardizzazione dell'output come pd.DataFrame (MultiIndex columns)
         df = df[["open", "high", "low", "close"]]
+        df.columns = pd.MultiIndex.from_product([[ticker], df.columns])
+        return df
+
+    async def get_marketcap(
+        self,
+        session: aiohttp.ClientSession,
+        ticker: str,
+        time_params: dict[datetime, datetime]
+    ) -> pd.DataFrame:
+        """
+        Implementa metodo astratto di BaseProvider per i dati MarketCap secondo i parametri di FMP.
+        """
+        # NOTE: col piano free non si possono chiedere from e to!
+        params = {
+            "symbol": ticker,
+            "apikey": self.api_key
+        }
         
-        # estrazione della serie dei prezzi di chiusura
+        # download dei dati tramite richiesta HTTP
+        json_data = await self.http_request(session, self.MARKETCAP_ENDPOINT, params)
+        if not json_data:
+            raise RuntimeError(f"Download failure for ticker {ticker} from FMP.")
+        
+        # conversione in DataFrame pandas
+        df = pd.DataFrame(json_data)
+        df["date"] = pd.to_datetime(df["date"])
+        df.set_index("date", inplace=True)
+
+        # standardizzazione dell'output come pd.DataFrame (MultiIndex columns)
+        df = df['marketCap'].to_frame()
         df.columns = pd.MultiIndex.from_product([[ticker], df.columns])
         return df
