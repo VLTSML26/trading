@@ -326,15 +326,13 @@ class Portfolio:
         self.weights = self.validate_weights(weights)
         self.name = name
     
-    # BUG: must pass an index (rivedere tutta la funzione)
     def _repr_html_(self):
-        summary = pd.DataFrame({
-            "Annualized returns": self.annual_return,
-            "Annualized volatility": self.annual_volatility,
-            "Max drawdown": self.max_drawdown,
-            "Sharpe Ratio (3%)": self.sharpe_ratio()
-        })
-        return f"<h3>Summary for {self.name} portfolio</h3>" + summary.sort_index().to_html()
+        """
+        Metodo di rappresentazione HTML del summary del portafoglio.
+        """
+        html_title = f"<h3>Summary for {self.name} portfolio</h3>"
+        html_table = self.summary.to_frame("Value").to_html(border=0)
+        return html_title + html_table
     
     def validate_weights(self, weights: Union[list, pd.Series, np.ndarray, None]) -> pd.Series:
         """
@@ -363,6 +361,16 @@ class Portfolio:
         
         return weights_s
 
+    @property
+    def summary(self) -> pd.Series:
+        return pd.Series({
+            "Effective constituents": self.enc,
+            "Annualized returns": self.annual_return,
+            "Annualized volatility": self.annual_volatility,
+            "Max drawdown": self.max_drawdown,
+            "Sharpe Ratio (3%)": self.sharpe_ratio()
+        }, name = self.name)
+    
     @property
     def enc(self) -> float:
         """
@@ -451,33 +459,80 @@ class Portfolio:
         """Restituisce il plotter attuale."""
         return cls.plotter
     
-    def plot_returns(self, ax: axes.Axes | None = None, *args, **kwargs) -> axes.Axes:
+    def plot_returns(self, ax: axes.Axes | None=None, *args, **kwargs) -> axes.Axes:
         """
         Plot dei rendimenti del portafoglio.
         - Se 'ax' è fornito: grafica sull'axes specificato (nessuna condivisione automatica).
-        - Se 'ax' è None: delega al Plotter per condivisione basata su DatetimeIndex.
+        - Se 'ax' è None: delega al Plotter per condivisione basata su DatetimeIndex e tipo di grafico.
+
         Parametri supportati: 'rescale' (bool), 'legend_loc', più kwargs di pandas.plot().
         """
+        # specifica plotter e verifica metodi
         plotter = self.__class__.get_plotter()
+        if not hasattr(plotter, "plot_returns"):
+            raise NotImplementedError("Current plotter has no method 'plot_returns'.")
+        
         return plotter.plot_returns(self, ax=ax, *args, **kwargs)
 
-    def plot_drawdown(self, ax: axes.Axes | None = None, *args, **kwargs) -> axes.Axes:
-        """Plot del drawdown; stessa delega e regole di condivisione dell'axes."""
+    def plot_drawdown(self, ax: axes.Axes | None=None, *args, **kwargs) -> axes.Axes:
+        """
+        Plot dei drawdown del portafoglio.
+        Vedi doc di plot_returns.
+        """
+        # specifica plotter e verifica metodi
         plotter = self.__class__.get_plotter()
+        if not hasattr(plotter, "plot_drawdown"):
+            raise NotImplementedError("Current plotter has no method 'plot_drawdown'.")
+
         return plotter.plot_drawdown(self, ax=ax, *args, **kwargs)
+
+    @classmethod
+    def plot_portfolios_weights(
+        cls,
+        portfolios: list,
+        ax: axes.Axes | None = None,
+        **kwargs
+    ) -> axes.Axes:
+        """
+        Facade comodo per plottare i pesi di una lista di Portfolio, delegato al Plotter.
+        """
+        # specifica plotter e verifica metodi
+        plotter = cls.get_plotter()
+        if not hasattr(plotter, "plot_weights"):
+            raise NotImplementedError("Current plotter has no method 'plot_weights'.")
+        
+        return plotter.plot_weights(portfolios, ax=ax, **kwargs)
+
+    def plot_summary_table(self):
+        """
+        Funzione di plot della tabella di summary.
+        """
+        # formattazione tabella
+        df = self.summary.to_frame("Value")
+        df["Value"] = df.apply(
+            lambda r: f"{r['Value']:.2%}" if "Sharpe" not in r.name else f"{r['Value']:.2f}", # FIXME: qua inserire anche Effective portfolios tra formattazione .2f
+            axis=1
+        )
+        
+        fig, ax = plt.subplots()
+        ax.axis("off")
+        ax.set_title(f"Summary for {self.name} portfolio", loc="left", fontsize=12, pad=10)
+        tbl = ax.table(
+            cellText=df.values,
+            rowLabels=df.index,
+            colLabels=df.columns,
+            loc="center",
+            cellLoc="right",
+            rowLoc="left"
+        )
+        tbl.scale(1, 1.2)
+        fig.tight_layout()
+        return fig, ax
 
     @staticmethod
     def get_shared_figure():
         """Figura usata più di recente dal Plotter (utile per fig.show())."""
         return Portfolio.get_plotter().get_last_figure()
-
-    # def plot_returns(self, ax: axes.Axes, *args, **kwargs) -> axes.Axes:
-    #     """
-    #     Plot rendimenti.
-    #     """
-    #     if not kwargs.get('rescale'):
-    #         return self.comp_returns.plot(ax=ax, label=self.name, *args, **kwargs)
-    #     return (self.comp_returns/self.comp_returns.iloc[0]).plot(ax=ax, label=self.name, *args, **kwargs)
 
 def get_msr(tickers: Tickers, rf: float=0.03) -> Portfolio:
     """

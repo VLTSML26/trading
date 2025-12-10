@@ -18,8 +18,6 @@ from .base import BaseProvider
 
 load_dotenv() # carica variabili d'ambiente da .env
 
-# TODO 1: implementare download asincroni
-# TODO 2: implementare download anche di prezzi di apertura, intraday (abbonamento free non so...)
 class FMPProvider(BaseProvider):
     """
     Provider per Financial Modeling Prep (FMP).

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import pandas as pd
-from matplotlib import axes
+import numpy as np
+from matplotlib import axes, cm
 from matplotlib import pyplot as plt
 from typing import Optional, Dict, Tuple, Any, List, Hashable
 
@@ -167,6 +168,76 @@ class PortfolioPlotter(BasePlotter):
         series.plot(ax=ax, label=getattr(portfolio, 'name', None), **kwargs)
         if self.auto_legend:
             ax.legend(loc=legend_loc)
+        return ax
+
+    def plot_weights(
+        self,
+        portfolios: list,
+        ax: axes.Axes | None = None,
+        *,
+        legend_loc: str = 'best',
+        colormap: str = 'tab20', # colormap per i tickers
+        sort_tickers: bool = False # se True, ordina i tickers per nome
+    ) -> axes.Axes:
+        """
+        Grafico a colonne impilate dei pesi per una lista di portafogli.
+        """
+        # check input
+        if not portfolios:
+            raise ValueError("Must provide at least one Portfolio.")
+        if ax is None:
+            # group_key separata: ('weights', None) non dipende dall'indice temporale
+            fig, ax = self._get_group_axes(('weights', None))
+
+        # matrice dei pesi
+        all_tickers = []
+        for p in portfolios:
+            all_tickers.extend(list(p.weights.index))
+        tickers_unique = sorted(set(all_tickers)) if sort_tickers else list(dict.fromkeys(all_tickers))
+
+        # costruzione DataFrame con 0 dove l'asset non è presente in un portfolio
+        data = pd.DataFrame(
+            0.,
+            index=[getattr(p, 'name', f'Portfolio {i}') for i, p in enumerate(portfolios)],
+            columns=tickers_unique
+        )
+        for i, p in enumerate(portfolios):
+            name = getattr(p, 'name', f'Portfolio {i}')
+            # allineiamo sulla union dei tickers, riempiendo con 0
+            w = p.weights.reindex(tickers_unique).fillna(0.)
+            # normalizziamo per sicurezza (non dovrebbe servire)
+            s = w.sum()
+            if s > 0 and not np.isclose(s, 1.):
+                w = w / s
+            data.loc[name, :] = w
+
+        # colori consistenti per tickers
+        cmap = cm.get_cmap(colormap, len(tickers_unique))
+        colors = {t: cmap(i) for i, t in enumerate(tickers_unique)}
+
+        # disegno delle barre impilate
+        x = np.arange(len(data.index))
+        width = 0.6
+
+        bottom = np.zeros(len(data.index))
+        for t in tickers_unique:
+            heights = data[t].values
+            ax.bar(x, heights, width=width, bottom=bottom, color=colors[t], label=t)
+            bottom += heights
+
+        # ulteriori abbellimenti
+        ax.set_xticks(x)
+        ax.set_xticklabels(list(data.index), rotation=0)
+        ax.set_ylim(0, 1)
+        ax.set_ylabel("Weights")
+        ax.set_title("Portfolio weights")
+
+        if self.auto_legend:
+            ax.legend(loc=legend_loc, ncol=2, frameon=True)
+
+        # griglia leggera sull'asse y
+        ax.grid(axis='y', linestyle=':', alpha=0.5)
+
         return ax
 
 GLOBAL_PLOTTER = PortfolioPlotter(style='ggplot', auto_legend=True)
