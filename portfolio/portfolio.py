@@ -17,11 +17,13 @@ import copy
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
-from typing import Union, Self, Any, Optional
+from .plotter import GLOBAL_PLOTTER, PortfolioPlotter
+from typing import Union, Any, Optional
 from marketdata.yfinance import YFinanceProvider
 from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
 
 WEIGHT_BOUNDS = ((0., 1.),)
+
 class Tickers:
     """
     Classe Tickers: è un catalogo di dati storici riferiti a una serie di asset
@@ -309,6 +311,7 @@ class Portfolio:
     
     Importante: è un oggetto finance-centric. Implementa logica finanziaria.
     """
+    plotter: PortfolioPlotter = GLOBAL_PLOTTER
 
     def __init__(self, tickers: Tickers, weights: Any=None, name: str=None):
         """
@@ -359,6 +362,14 @@ class Portfolio:
             raise ValueError("Each weight must be a number between 0 and 1.")
         
         return weights_s
+
+    @property
+    def enc(self) -> float:
+        """
+        ENC (Effective Number of Constituents).
+        """
+        wsquared = self.weights**2
+        return 1/wsquared.sum()
 
     @property
     def daily_returns(self) -> pd.Series:
@@ -429,6 +440,44 @@ class Portfolio:
         Sharpe ratio del portafoglio.
         """
         return (self.annual_return - rf) / self.annual_volatility
+    
+    @classmethod
+    def set_plotter(cls, plotter: PortfolioPlotter) -> None:
+        """Sostituisce il plotter usato da tutti gli oggetti Portfolio."""
+        cls.plotter = plotter
+
+    @classmethod
+    def get_plotter(cls) -> PortfolioPlotter:
+        """Restituisce il plotter attuale."""
+        return cls.plotter
+    
+    def plot_returns(self, ax: axes.Axes | None = None, *args, **kwargs) -> axes.Axes:
+        """
+        Plot dei rendimenti del portafoglio.
+        - Se 'ax' è fornito: grafica sull'axes specificato (nessuna condivisione automatica).
+        - Se 'ax' è None: delega al Plotter per condivisione basata su DatetimeIndex.
+        Parametri supportati: 'rescale' (bool), 'legend_loc', più kwargs di pandas.plot().
+        """
+        plotter = self.__class__.get_plotter()
+        return plotter.plot_returns(self, ax=ax, *args, **kwargs)
+
+    def plot_drawdown(self, ax: axes.Axes | None = None, *args, **kwargs) -> axes.Axes:
+        """Plot del drawdown; stessa delega e regole di condivisione dell'axes."""
+        plotter = self.__class__.get_plotter()
+        return plotter.plot_drawdown(self, ax=ax, *args, **kwargs)
+
+    @staticmethod
+    def get_shared_figure():
+        """Figura usata più di recente dal Plotter (utile per fig.show())."""
+        return Portfolio.get_plotter().get_last_figure()
+
+    # def plot_returns(self, ax: axes.Axes, *args, **kwargs) -> axes.Axes:
+    #     """
+    #     Plot rendimenti.
+    #     """
+    #     if not kwargs.get('rescale'):
+    #         return self.comp_returns.plot(ax=ax, label=self.name, *args, **kwargs)
+    #     return (self.comp_returns/self.comp_returns.iloc[0]).plot(ax=ax, label=self.name, *args, **kwargs)
 
 def get_msr(tickers: Tickers, rf: float=0.03) -> Portfolio:
     """
@@ -463,26 +512,28 @@ def get_msr(tickers: Tickers, rf: float=0.03) -> Portfolio:
         constraints=({'type': 'eq', 'fun': normalization}),
         bounds=WEIGHT_BOUNDS*tickers.n_assets 
     )
-    return Portfolio(tickers, new_weights.x)
+    return Portfolio(tickers, new_weights.x, "MSR")
 
 def get_gmv(tickers: Tickers) -> Portfolio:
     """
     Dato un oggetto Tickers (insieme di titoli) restituisce il GMV (Global Minimum Variance) Portfolio.
     """
-    return get_msr(tickers, rf=0.) # si mostra che GMV = MSR(rf: 0)
+    gmv_ptf = get_msr(tickers, rf=0.) # si mostra che GMV = MSR(rf: 0)
+    gmv_ptf.name = "GMV"
+    return gmv_ptf
 
-def get_ew(tickers: Tickers) -> Portfolio:
+def get_eqw(tickers: Tickers) -> Portfolio:
     """
     Dato un oggetto Tickers (insieme di titoli) restituisce il EW (Equally Weighted) Portfolio.
     """
-    return Portfolio(tickers, None) # sfrutta le proprietà del costruttore di Portfolio
+    return Portfolio(tickers, None, "EqW") # sfrutta le proprietà del costruttore di Portfolio
 
 def get_capw(tickers: Tickers) -> Portfolio:
     """
     Dato un oggetto Tickers (insieme di titoli) restituisce il CW (Cap Weighted) Portfolio.
     """
     weights = tickers.last_mkcap / tickers.last_mkcap.sum()
-    return Portfolio(tickers, weights)
+    return Portfolio(tickers, weights, "CapW")
 
 # TODO: eventualmente creare una classe per la frontiera efficiente anche vedendo cosa segue nel corso di EDHEC
 def efficient_frontier(

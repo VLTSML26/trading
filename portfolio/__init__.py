@@ -3,10 +3,15 @@ from .portfolio import (
     Tickers,
     get_msr,
     get_gmv,
-    get_ew,
+    get_eqw,
     get_capw,
     efficient_frontier,
     plot_efficient_frontier
+)
+
+from .plotter import (
+    PortfolioPlotter,
+    GLOBAL_PLOTTER
 )
 
 __all__ = [
@@ -14,8 +19,10 @@ __all__ = [
     "Tickers",
     "get_msr",
     "get_gmv",
-    "get_ew",
+    "get_eqw",
     "get_capw",
     "efficient_frontier",
-    "plot_efficient_frontier"
+    "plot_efficient_frontier",
+    "PortfolioPlotter",
+    "GLOBAL_PLOTTER"
 ]
