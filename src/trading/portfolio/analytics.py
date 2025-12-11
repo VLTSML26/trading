@@ -55,5 +55,5 @@ def get_capw(tickers: Tickers) -> Portfolio:
     """
     Dato un oggetto Tickers (insieme di titoli) restituisce il CW (Cap Weighted) Portfolio.
     """
-    weights = tickers.last_mkcap / tickers.last_mkcap.sum()
+    weights = tickers.first_mkcap / tickers.first_mkcap.sum()
     return Portfolio(tickers, weights, "CapW")

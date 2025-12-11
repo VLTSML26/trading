@@ -88,12 +88,12 @@ class Tickers:
         return self.df.xs('close', axis=1, level=-1).dropna()
     
     @property
-    def last_mkcap(self) -> pd.Series:
+    def first_mkcap(self) -> pd.Series:
         """
-        Restituisce l'ultimo dato disponibile sulla capitalizzazione dei titoli.
+        Restituisce il primo dato disponibile sulla capitalizzazione dei titoli.
         """
         # NOTE: funzione utile soltanto poichè il provider FMP non fornisce tutto lo storico nella versione free
-        mkcap = self.df.xs('marketCap', axis=1, level=-1).iloc[-1]
+        mkcap = self.df.xs('marketCap', axis=1, level=-1).iloc[0]
         mkcap.name = 'Market CAP'
         return mkcap
     
