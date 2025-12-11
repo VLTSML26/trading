@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading"
+version = "0.1.0"
+description = "Toolkit per backtesting, market data e gestione portafoglio"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{ name = "Samuele Voltan" }]
+keywords = ["trading", "backtesting", "market data", "portfolio"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent"
+]
+dependencies = [
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "python-dotenv>=1.0",
+  "requests>=2.32"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "black>=24.10", "mypy>=1.11"]
+plot = ["matplotlib>=3.9"]
+
+[project.scripts]
+trading = "trading.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["trading*"]

@@ -1,26 +1,11 @@
-"""
-Modulo portfolio: gestione e analisi di portafogli di asset finanziari.
-Contiene le classi:
-- Tickers: data-centric container.
-- Portfolio: finance-centric implementazione di logiche finanziarie.
-
-Sviluppato da Samuele Voltan durante e dopo il corso
-"Introduction to Portfolio Construction and Analysis with Python" della EDHEC Business School.
-
-Riferimenti:
-- https://www.edhec.edu/en
-- https://www.coursera.org/learn/introduction-portfolio-construction-python
-- https://www.paolocoletti.com/financialtrading
-"""
-
 import copy
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
-from .plotter import GLOBAL_PLOTTER, PortfolioPlotter
 from typing import Union, Any, Optional
-from marketdata.yfinance import YFinanceProvider
-from matplotlib import pyplot as plt, axes; plt.style.use('ggplot')
+from trading.marketdata.yfinance import YFinanceProvider
+from matplotlib import pyplot as plt, axes
+from .plotter import PortfolioPlotter, GLOBAL_PLOTTER
 
 WEIGHT_BOUNDS = ((0., 1.),)
 
@@ -533,114 +518,3 @@ class Portfolio:
     def get_shared_figure():
         """Figura usata più di recente dal Plotter (utile per fig.show())."""
         return Portfolio.get_plotter().get_last_figure()
-
-def get_msr(tickers: Tickers, rf: float=0.03) -> Portfolio:
-    """
-    Dato un oggetto Tickers (insieme di titoli) restituisce il MSR (Max Sharpe-Ratio) Portfolio.
-    
-    :param tickers: Insieme di titoli dai quali costruire il MSR Portfolio.
-    :type tickers: Tickers
-    :param rf: Tasso risk-free di riferimento.
-    :type rf: float
-    :return: Oggetto Portfolio costruito con i titoli di Tickers ed i pesi che massimizzano lo SR.
-    :rtype: Portfolio
-    """
-    # funzione da minimizzare (sharpe ratio negativo)
-    def negative_sharpe_ratio(w):
-        try_ptf = Portfolio(tickers, w)
-        return -try_ptf.sharpe_ratio(rf=rf)
-    
-    # funzione di constraint (normalizzazione pesi)
-    def normalization(w):
-        return np.sum(w) - 1
-    
-    # configurazione iniziale dei pesi
-    w0 = np.repeat(1/tickers.n_assets, tickers.n_assets)
-
-    # massimizzazione sharpe ratio
-    from scipy.optimize import minimize
-    new_weights = minimize(
-        negative_sharpe_ratio,
-        w0,
-        method='SLSQP',
-        options={'disp': False},
-        constraints=({'type': 'eq', 'fun': normalization}),
-        bounds=WEIGHT_BOUNDS*tickers.n_assets 
-    )
-    return Portfolio(tickers, new_weights.x, "MSR")
-
-def get_gmv(tickers: Tickers) -> Portfolio:
-    """
-    Dato un oggetto Tickers (insieme di titoli) restituisce il GMV (Global Minimum Variance) Portfolio.
-    """
-    gmv_ptf = get_msr(tickers, rf=0.) # si mostra che GMV = MSR(rf: 0)
-    gmv_ptf.name = "GMV"
-    return gmv_ptf
-
-def get_eqw(tickers: Tickers) -> Portfolio:
-    """
-    Dato un oggetto Tickers (insieme di titoli) restituisce il EW (Equally Weighted) Portfolio.
-    """
-    return Portfolio(tickers, None, "EqW") # sfrutta le proprietà del costruttore di Portfolio
-
-def get_capw(tickers: Tickers) -> Portfolio:
-    """
-    Dato un oggetto Tickers (insieme di titoli) restituisce il CW (Cap Weighted) Portfolio.
-    """
-    weights = tickers.last_mkcap / tickers.last_mkcap.sum()
-    return Portfolio(tickers, weights, "CapW")
-
-# TODO: eventualmente creare una classe per la frontiera efficiente anche vedendo cosa segue nel corso di EDHEC
-def efficient_frontier(
-    tickers: list[str],
-    n_samples: int = 20,
-    period: str = None,
-    return_range: list[float] = None,
-) -> list[Portfolio]:
-    """
-    Calcola la frontiera efficiente per un insieme di titoli.
-
-    :param tickers: Lista di ticker da includere nel portafoglio.
-    :type tickers: list[str]
-    :param n_samples: Numero di portafogli campionati sulla frontiera (default: 20).
-    :type n_samples: int
-    :param period: Periodo storico per il download dei dati (es. '1mo', '1y'). Se None viene usato il default del costruttore.
-    :type period: str | None
-    :param return_range: Intervallo [min, max] dei rendimenti target da esplorare. Se None si usa l'intervallo derivato dai singoli asset.
-    :type return_range: list[float] | None
-    :return: Lista di oggetti Portfolio corrispondente ai punti della frontiera efficiente.
-    :rtype: list[Portfolio]
-    """
-    start_ptf = Portfolio(tickers, period=period)
-
-    if return_range is None:
-        return_range = (start_ptf._t.annual_returns.min(), start_ptf._t.annual_returns.max())
-
-    # definizione della griglia dei rendimenti
-    ptfs = [start_ptf.copy() for _ in range(n_samples)]
-    target_returns = np.linspace(*return_range, n_samples)
-
-    # definizione dei portafoglio sulla frontiera efficiente
-    for tr, ptf in zip(target_returns, ptfs):
-        ptf.minimize_vol(tr)
-    
-    return ptfs
-
-def plot_efficient_frontier(ptfs: list[Portfolio]):
-    """
-    Funzione che plotta la frontiera efficiente ed i singoli asset in portafoglio
-    nel piano rischio-rendimento.
-    """
-    returns = [ptf.ptf_return for ptf in ptfs]
-    volatilities = [ptf.ptf_volatility for ptf in ptfs]
-    sharpe_ratios = [ptf.ptf_return / ptf.ptf_volatility for ptf in ptfs]
-
-    fig, ax = plt.subplots()
-    ax.scatter(volatilities, returns, c=sharpe_ratios, marker='*', label='Efficient frontier')
-    ax.scatter(ptfs[0]._t.annual_volatility, ptfs[0]._t.annual_returns, c='gray', label='Single assets')
-
-    ax.set_xlabel('Volatility')
-    ax.set_ylabel('Return')
-    fig.suptitle('Risk-return space')
-
-    plt.legend()

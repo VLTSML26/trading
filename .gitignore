@@ -1,8 +1,7 @@
-__pycache__
-*/__pycache__
+__pycache__/
 *.pyc
-ga
+.venv/
 .env
-test.py
-mytrading.py
-ideas/
+build/
+dist/
+*.egg-info/
