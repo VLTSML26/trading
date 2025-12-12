@@ -258,9 +258,9 @@ class Tickers:
         :rtype: Axes
         """
         if rescale:
-            return (self.df/self.df.iloc[0]).plot(*args, **kwargs)
+            return (self.close/self.close.iloc[0]).plot(*args, **kwargs)
         else:
-            return self.df.plot(*args, **kwargs)
+            return self.close.plot(*args, **kwargs)
         
     def plot_dailyret_dist(self, level: float=0.95):
         """

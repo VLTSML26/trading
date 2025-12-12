@@ -3,7 +3,10 @@ import pandas as pd
 import numpy as np
 from matplotlib import axes, cm
 from matplotlib import pyplot as plt
-from typing import Optional, Dict, Tuple, Any, List, Hashable
+from typing import Optional, Dict, Tuple, Any, List, Hashable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .core import Portfolio
 
 class BasePlotter:
     """
@@ -39,7 +42,7 @@ class BasePlotter:
             if fig is not None and plt.fignum_exists(fig.number)
         ]
 
-    def _get_group_axes(self, group_key: Hashable | None) -> Tuple[plt.Figure, axes.Axes]:
+    def _get_group_axes(self, group_key: Optional[Hashable]) -> Tuple[plt.Figure, axes.Axes]:
         """
         Se 'group_key' è None: restituisce SEMPRE una nuova figura/axes (nessuna condivisione).
         Altrimenti: riutilizza o crea (fig, ax) associati a quella chiave.
@@ -67,12 +70,7 @@ class PortfolioPlotter(BasePlotter):
     Decide la 'group key' in funzione dell'indice del portfolio e del tipo di grafico da plottare.
     Condivide l'axes solo se l'indice è DatetimeIndex (e coincide) e se il tipo di grafico è lo stesso.
     """
-    def __init__(
-        self,
-        *,
-        style: Optional[str] = 'ggplot',
-        auto_legend: bool = True
-    ):
+    def __init__(self, *, style: Optional[str]='ggplot', auto_legend: bool=True):
         """
         Costruttore di PortfolioPlotter che eredita da BasePlotter.
         """
@@ -99,8 +97,8 @@ class PortfolioPlotter(BasePlotter):
 
     def _axes_for_portfolio(
         self,
-        portfolio: Any,
-        ax: axes.Axes | None,
+        portfolio: "Portfolio",
+        ax: Optional[axes.Axes],
         *,
         plot_kind: str
     ) -> axes.Axes:
@@ -124,8 +122,8 @@ class PortfolioPlotter(BasePlotter):
 
     def plot_returns(
         self,
-        portfolio: Any,
-        ax: axes.Axes | None = None,
+        portfolio: "Portfolio",
+        ax: Optional[axes.Axes] = None,
         *,
         rescale: bool = False,
         legend_loc: str = 'best',
@@ -150,8 +148,8 @@ class PortfolioPlotter(BasePlotter):
 
     def plot_drawdown(
         self,
-        portfolio: Any,
-        ax: axes.Axes | None = None,
+        portfolio: "Portfolio",
+        ax: Optional[axes.Axes] = None,
         *,
         legend_loc: str = 'best',
         **kwargs
@@ -172,8 +170,8 @@ class PortfolioPlotter(BasePlotter):
 
     def plot_weights(
         self,
-        portfolios: list,
-        ax: axes.Axes | None = None,
+        portfolios: list["Portfolio"],
+        ax: Optional[axes.Axes] = None,
         *,
         legend_loc: str = 'best',
         colormap: str = 'tab20', # colormap per i tickers
