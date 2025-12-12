@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy import linalg as la
 from typing import Union, Any, Optional
-from trading.marketdata.yfinance import YFinanceProvider
+from trading.marketdata import DEFAULT_FAKEDATA
 from matplotlib import pyplot as plt, axes
 from .plotter import PortfolioPlotter, GLOBAL_PLOTTER
 
@@ -51,7 +51,7 @@ class Tickers:
             raise ValueError("Must specify either 'period' or at least 'start'.")
 
         self.tickers = tickers if isinstance(tickers, list) else [tickers]
-        self.provider = provider or YFinanceProvider()
+        self.provider = provider or DEFAULT_FAKEDATA
 
         # scarico i dati attraverso il provider
         if period:

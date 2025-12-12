@@ -166,3 +166,9 @@ class FakeProvider(BaseProvider):
         df = pd.concat([ohlc, mcap], axis=1).sort_index(axis=1)
         return df
 
+DEFAULT_FAKEDATA = FakeProvider(
+    annual_rets={"AAPL": 0., "MSFT": .18},
+    annual_vol={"AAPL": .2, "MSFT": .1},
+    start_prices={"AAPL": 100., "MSFT": 200.},
+    base_mkcaps={"AAPL": 2.5e11, "MSFT": 2.e11}
+)
