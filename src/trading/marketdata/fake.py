@@ -51,6 +51,7 @@ class FakeProvider(BaseProvider):
         self.start_prices = start_prices
         self.base_mkcaps = base_mkcaps
         self.correlation_matrix = correlation_matrix
+        self.dt = 252. # giorni di mercato aperto
         self.rng = np.random.default_rng(seed)
 
     @staticmethod
@@ -81,43 +82,59 @@ class FakeProvider(BaseProvider):
     async def download_async(self, tickers: list[str], **kwargs) -> pd.DataFrame:
         """
         Override del metodo download async della classe parent per simulare congiuntamente i rendimenti
-        dei diversi titoli richiesti secondo la loro correlazioen.
+        dei diversi titoli richiesti secondo la loro correlazione.
         """
-        # normalizza i parametri temporali come BaseProvider.from_to()
+        # normalizza i parametri temporali come BaseProvider e crea l'indice
         start, end = self.from_to(**kwargs)
         idx = self._date_index(start, end, self.MAX_DEPTH)
+        s0 = self._to_per_ticker(self.start_prices, tickers)
+        cap0 = self._to_per_ticker(self.base_mkcaps, tickers)
 
-        # parametri per ticker
+        """
+        # NOTE
+        Nota tecnica: il simulatore Monte Carlo riceve in input i rendimenti annui attesi dei titoli
+        come rendimenti semplici. Il GBM invece assume che i logaritmi dei rendimenti si muovano di moto
+        Browniano. Dunque bisogna attuare le seguenti trasformazioni:
+            1 - trasformare i rendimenti annui semplici in rendimenti annui log-continui
+            2 - ottenere i drift giornalieri dai rendimenti log-continui
+            3 - simulare i rendimenti mediante GBM
+            4 - trasformare tali rendimenti in fattori di crescita giornalieri tramite esponenziale
+        """
+
+        # passo 1: rendimenti annui log-continui e volatilità annua
         mu_a = self._to_per_ticker(self.annual_rets, tickers)
+        mu_a_log = np.array([np.log1p(mu_a[t]) for t in tickers])
         sg_a = self._to_per_ticker(self.annual_vol, tickers)
-        s0_map = self._to_per_ticker(self.start_prices, tickers)
-        cap0_map = self._to_per_ticker(self.base_mkcaps, tickers)
 
-        mu_d = np.array([mu_a[t] / 252.0 for t in tickers]) # vettore drift giornaliero
-        sigma_d = np.array([sg_a[t] / np.sqrt(252.0) for t in tickers]) # vettore vol giornaliera
+        # passo 2: drift e volatilità giornalieri
+        mu_d = mu_a_log / self.dt
+        sigma_d = np.array([sg_a[t] / np.sqrt(self.dt) for t in tickers])
 
-        # matrice di covarianza giornaliera
+        # matrice di covarianza per GBM
         if self.correlation_matrix is not None:
             diag = np.diag(sigma_d)
-            Sigma_d = diag @ self.correlation_matrix @ diag
+            cov_d = diag @ self.correlation_matrix @ diag
         else:
-            Sigma_d = np.diag(sigma_d ** 2)
+            cov_d = np.diag(sigma_d**2)
+        
+        # passi 3 e 4: GBM e trasformazione in rendimenti semplici
+        r_d_log = self.rng.multivariate_normal(mean=mu_d, cov=cov_d, size=len(idx))
+        growth_fct = np.exp(r_d_log)
 
-        # campionamento rendimenti multivariati (n_days × n_tickers)
-        R = self.rng.multivariate_normal(mean=mu_d, cov=Sigma_d, size=len(idx))
+        # costruzione dei prezzi di apertura e chiusura
+        s0_vec = np.array([s0[t] for t in tickers])
+        close_mat = np.cumprod(growth_fct, axis=0) * s0_vec[None, :]
+        open_mat = np.vstack([s0_vec, close_mat[:-1, :]])
 
-        # costruzione prezzi
-        S0_vec = np.array([s0_map[t] for t in tickers])
-        close_mat = np.cumprod(1.0 + R, axis=0) * S0_vec[None, :]
-        open_mat = np.vstack([S0_vec, close_mat[:-1, :]])
-        # rumore intraday condiviso (puoi differenziarlo per ticker se vuoi)
+        # costruzione dei prezzi intraday con rumore condiviso
         eps = np.abs(self.rng.normal(loc=0.0, scale=float(np.mean(sigma_d)), size=len(idx)))
         high_mat = np.maximum(open_mat, close_mat) * (1.0 + 0.25 * eps[:, None])
         low_mat = np.minimum(open_mat, close_mat) * (1.0 - 0.25 * eps[:, None])
         low_mat = np.clip(low_mat, 0.0, None)
 
-        cap0_vec = np.array([cap0_map[t] for t in tickers])
-        mkcap_mat = cap0_vec[None, :] * (close_mat / S0_vec[None, :])
+        # costruzione capitalizzazione
+        cap0_vec = np.array([cap0[t] for t in tickers])
+        mkcap_mat = cap0_vec[None, :] * (close_mat / s0_vec[None, :])
 
         # multi index sulle colonne del dataframe
         cols_ohlc = pd.MultiIndex.from_product([tickers, ["open", "high", "low", "close"]])
