@@ -7,7 +7,8 @@ from typing import Optional, Sequence, Mapping, Dict
 
 class FakeProvider(BaseProvider):
     """
-    FakeProvider. Simula con un metodo Monte Carlo i rendimenti giornalieri.
+    FakeProvider. Simula con un metodo Monte Carlo i rendimenti giornalieri tramite override del metodo download_async.
+
     I dati OHLCV + Market Cap sono così simulati:
         - Close: prezzo di chiusura segue un moto browniano geometrico
         - Open: prezzo d'apertura uguale al prezzo di chiusura precedente (no pre-market)
@@ -71,89 +72,19 @@ class FakeProvider(BaseProvider):
             return {t: float(values.get(t, first)) for t in tickers}
         return {t: float(values) for t in tickers}
 
-    async def get_ohlcv(
-        self,
-        _,
-        ticker: str,
-        time_params: dict[datetime, datetime]
-    ) -> pd.DataFrame:
-        """
-        Implementa metodo astratto di BaseProvider per generare fake dati OHLCV secondo tecniche Monte Carlo.
-        """
-        # set dei parametri e del datetime index
-        start = time_params.get("start_date")
-        end = time_params.get("end_date")
-        idx = self._date_index(start, end, self.MAX_DEPTH)
-        
-        # parametri del GBM
-        mu = self._to_per_ticker(self.annual_rets, [ticker])[ticker] / 252.0
-        sigma = self._to_per_ticker(self.annual_vol, [ticker])[ticker] / np.sqrt(252.0)
-        s0 = self._to_per_ticker(self.start_prices, [ticker])[ticker]
+    async def get_ohlcv(self) -> pd.DataFrame:
+        pass
 
-        # rendimenti giornalieri
-        r = self.rng.normal(loc=mu, scale=sigma, size=len(idx))
-
-        # stima open/close
-        close = np.cumprod(1.0 + r) * s0
-        open_ = np.r_[s0, close[:-1]]
-
-        # stima high/low con rumore intraday
-        eps = np.abs(self.rng.normal(loc=0.0, scale=sigma, size=len(idx)))
-        high = np.maximum(open_, close) * (1.0 + 0.25 * eps)
-        low = np.minimum(open_, close) * (1.0 - 0.25 * eps)
-        low = np.clip(low, 0.0, None)
-
-        df = pd.DataFrame(
-            {
-                (ticker, "open"): open_,
-                (ticker, "high"): high,
-                (ticker, "low"): low,
-                (ticker, "close"): close,
-            },
-            index=idx,
-        )
-        df.columns = pd.MultiIndex.from_tuples(df.columns, names=["ticker", "field"])
-        return df
-
-    async def get_marketcap(
-        self,
-        _,  # inutilizzato
-        ticker: str,
-        time_params: dict[datetime, datetime],
-    ) -> pd.DataFrame:
-        """
-        Implementa metodo astratto di BaseProvider per generare market cap simulato secondo la formula:
-            cap0 * (close / S0)
-        per ogni singolo ticker.
-        """
-        # set dei parametri e del datetime index
-        start = time_params.get("start_date")
-        end = time_params.get("end_date")
-        idx = self._date_index(start, end, self.MAX_DEPTH)
-        
-        # parametri del GBM
-        mu = self._to_per_ticker(self.annual_rets, [ticker])[ticker] / 252.0
-        sigma = self._to_per_ticker(self.annual_vol, [ticker])[ticker] / np.sqrt(252.0)
-        s0 = self._to_per_ticker(self.start_prices, [ticker])[ticker]
-        cap0 = self._to_per_ticker(self.base_mkcaps, [ticker])[ticker]
-
-        # GBM e market cap
-        r = self.rng.normal(loc=mu, scale=sigma, size=len(idx))
-        close = np.cumprod(1.0 + r) * s0
-        mkcap = cap0 * (close / s0)
-
-        # restituisce il MarketCap
-        df = pd.DataFrame({(ticker, "marketCap"): mkcap}, index=idx)
-        df.columns = pd.MultiIndex.from_tuples(df.columns, names=["ticker", "field"])
-        return df
+    async def get_marketcap(self) -> pd.DataFrame:
+        pass
 
     async def download_async(self, tickers: list[str], **kwargs) -> pd.DataFrame:
         """
         Override del metodo download async della classe parent per simulare congiuntamente i rendimenti
         dei diversi titoli richiesti secondo la loro correlazioen.
         """
-        # Normalizza i parametri temporali come fa BaseProvider.from_to()
-        start, end = self.from_to(**kwargs)  # usa la logica di BaseProvider per period/start/end  # noqa: E501
+        # normalizza i parametri temporali come BaseProvider.from_to()
+        start, end = self.from_to(**kwargs)
         idx = self._date_index(start, end, self.MAX_DEPTH)
 
         # parametri per ticker
@@ -188,15 +119,13 @@ class FakeProvider(BaseProvider):
         cap0_vec = np.array([cap0_map[t] for t in tickers])
         mkcap_mat = cap0_vec[None, :] * (close_mat / S0_vec[None, :])
 
-        # DataFrame MultiIndex
-        cols_ohlc = pd.MultiIndex.from_product([tickers, ["open", "high", "low", "close"]],
-                                               names=["ticker", "field"])
-        cols_mcap = pd.MultiIndex.from_product([tickers, ["marketCap"]],
-                                               names=["ticker", "field"])
-        ohlc = pd.DataFrame(
-            np.hstack([open_mat, high_mat, low_mat, close_mat]),
-            index=idx, columns=cols_ohlc
-        )
+        # multi index sulle colonne del dataframe
+        cols_ohlc = pd.MultiIndex.from_product([tickers, ["open", "high", "low", "close"]])
+        mats = np.stack([open_mat, high_mat, low_mat, close_mat], axis=2)
+        data = mats.reshape(mats.shape[0], -1)
+        ohlc = pd.DataFrame(data, index=idx, columns=cols_ohlc)
+        
+        cols_mcap = pd.MultiIndex.from_product([tickers, ["marketCap"]])
         mcap = pd.DataFrame(mkcap_mat, index=idx, columns=cols_mcap)
 
         df = pd.concat([ohlc, mcap], axis=1).sort_index(axis=1)
