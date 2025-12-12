@@ -73,6 +73,27 @@ class FakeProvider(BaseProvider):
             return {t: float(values.get(t, first)) for t in tickers}
         return {t: float(values) for t in tickers}
 
+    @staticmethod
+    def _parkinson(
+        sigma_d: np.ndarray,
+        open_mat: np.ndarray,
+        close_mat: np.ndarray
+    ) -> tuple[np.ndarray]:
+        """
+        Implementa il modello di Parkinson di stima della volatilità intraday basata sui prezzi di apertura e chiusura.
+        """
+        # stima del range di fluttuazione basata sulla volatilità giornaliera
+        range_factor = np.sqrt(4 * np.log(2))
+        expected_range = range_factor * sigma_d[None, :] * open_mat
+
+        # campionamento fluttuazioni (NOTE: utilizzo di uniform è molto base, si può studiare qualcosa di meglio)
+        u = np.random.uniform(0, 1)
+        high_mat = np.maximum(open_mat, close_mat) + u * expected_range
+        low_mat = np.minimum(open_mat, close_mat) - (1. - u) * expected_range
+        low_mat = np.clip(low_mat, 0., None) # evita negativi
+
+        return high_mat, low_mat
+    
     async def get_ohlcv(self) -> pd.DataFrame:
         pass
 
@@ -126,11 +147,8 @@ class FakeProvider(BaseProvider):
         close_mat = np.cumprod(growth_fct, axis=0) * s0_vec[None, :]
         open_mat = np.vstack([s0_vec, close_mat[:-1, :]])
 
-        # costruzione dei prezzi intraday con rumore condiviso
-        eps = np.abs(self.rng.normal(loc=0.0, scale=float(np.mean(sigma_d)), size=len(idx)))
-        high_mat = np.maximum(open_mat, close_mat) * (1.0 + 0.25 * eps[:, None])
-        low_mat = np.minimum(open_mat, close_mat) * (1.0 - 0.25 * eps[:, None])
-        low_mat = np.clip(low_mat, 0.0, None)
+        # costruzione dei prezzi intraday con rumore di Parkinson
+        high_mat, low_mat = self._parkinson(sigma_d, open_mat, close_mat)
 
         # costruzione capitalizzazione
         cap0_vec = np.array([cap0[t] for t in tickers])
