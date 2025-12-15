@@ -14,6 +14,8 @@ Include provider di dati **reali** (es. FMP) e **fittizi** (`FakeProvider`) basa
 ```bash
 git clone https://github.com/VLTSML26/trading.git
 cd trading
+# per adesso la versione installabile è in un altro branch
+git checkout package
 
 python -m venv .venv
 # macOS/Linux:

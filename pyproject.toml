@@ -17,10 +17,12 @@ classifiers = [
   "Operating System :: OS Independent"
 ]
 dependencies = [
-  "pandas>=2.2",
-  "numpy>=1.26",
-  "python-dotenv>=1.0",
-  "requests>=2.32"
+  "aiohttp==3.13.2",
+  "matplotlib==3.7.2",
+  "numpy==1.25.1",
+  "pandas==2.3.3",
+  "python-dotenv==1.2.1",
+  "scipy==1.16.3"
 ]
 
 [project.optional-dependencies]
