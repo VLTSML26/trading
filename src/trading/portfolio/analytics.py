@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from .core import Tickers, Portfolio, WEIGHT_BOUNDS
 
@@ -57,3 +58,11 @@ def get_capw(tickers: Tickers) -> Portfolio:
     """
     weights = tickers.first_mkcap / tickers.first_mkcap.sum()
     return Portfolio(tickers, weights, "CapW")
+
+def get_parity_ptf(tickers: Tickers) -> Portfolio:
+    # FIXME: i don't like that i have to call the Portfolio constructor twice (here and in return statement)
+    # NOTE: but at the moment its needed in order to give correct weights to proper assets
+    cov = Portfolio(tickers).covmat
+    weights = Portfolio.equal_risk_contributions(cov)
+    weights_series = pd.Series(weights, index = cov.index)
+    return Portfolio(tickers, weights_series, "Parity ptf")

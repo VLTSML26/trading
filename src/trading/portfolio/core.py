@@ -363,6 +363,33 @@ class Portfolio:
         """
         wsquared = self.weights**2
         return 1/wsquared.sum()
+    
+    @property
+    def hhi_enb(self) -> float:
+        """
+        ENB (Effective Number of correlated Bets) dalla definizione della misura HHI, indice di
+        Herfindahl-Hirschman.
+        """
+        return 1. / np.sum(self.risk_contribution(self.covmat, self.weights)**2)
+
+    @property
+    def meucci_enb(self) -> float:
+        """
+        ENB (Effective Number of correlated Bets) calcolato mediante la misura entropica di Meucci.
+        """
+        # diagonalizzazione della matrice di covarianza
+        try:
+            evals, evecs = la.eigh(self.covmat)
+        except:
+            evals, evecs = np.linalg.eigh(self.covmat)
+
+        # proiezione sulle componenti principali
+        proj = evecs.T @ self.weights
+        d = (evals * (proj ** 2)) / self.daily_volatility
+        d = np.clip(d, 1e-16, None)
+
+        return np.exp(-np.sum(d * np.log(d)))
+
 
     @property
     def daily_returns(self) -> pd.Series:
@@ -413,16 +440,23 @@ class Portfolio:
         """
         return self.tickers.daily_returns.cov()
 
+    @staticmethod
+    def variance(cov, w) -> float:
+        """
+        Metodo di calcolo della varianza del portafogli dati i pesi e la matrice di covarianza.
+        Si osserva che spesso la decomposizione di Cholesky e la forma quadratica danno risultati simili ma non
+        comparabili, per il momento non uso la Cholesky.
+        """
+        # try:
+        #     chol = la.cholesky(cov)
+        #     y = chol.T @ w
+        #     return y.T @ y
+        # except la.LinAlgError:
+        return w.T @ cov @ w
+
     @property
     def daily_volatility(self) -> float:
-        try:
-            # prova decomposizione di Cholesky per aumentare performance
-            chol = la.cholesky(self.covmat)
-            y = chol.T @ self.weights
-            return (y.T @ y)**0.5
-        except la.LinAlgError:
-            # in questo caso fa il calcolo più pesante senza la Cholesky
-            return (self.weights.T @ self.covmat @ self.weights)**0.5
+        return self.variance(self.covmat, self.weights)**0.5
     
     @property
     def annual_volatility(self) -> float:
@@ -518,3 +552,64 @@ class Portfolio:
     def get_shared_figure():
         """Figura usata più di recente dal Plotter (utile per fig.show())."""
         return Portfolio.get_plotter().get_last_figure()
+    
+    @staticmethod
+    def risk_contribution(cov, w):
+        return np.multiply(cov @ w, w.T) / Portfolio.variance(cov, w)
+
+    @staticmethod
+    def target_risk_contributions(target_risk: np.ndarray, cov: np.ndarray) -> np.ndarray:
+        """
+        Returns the weights of the portfolio in which the contributions to portfolio risk are as
+        close as possible to the target_risk, given the covariance matrix.
+
+        :param target_risk: Target array of risk contributions of each asset in the portfolio.
+        :type target_risk: np.ndarray
+        :param cov: Covariance matrix of the returns.
+        :type cov: np.ndarray
+        :return: Weights that match the target risk contribution.
+        :rtype: np.ndarray
+        """
+        n = cov.shape[0]
+        init_guess = np.repeat(1/n, n)
+        bounds = WEIGHT_BOUNDS * n
+        
+        # constraints
+        weights_sum_to_1 = {
+            'type': 'eq',
+            'fun': lambda weights: np.sum(weights) - 1
+        }
+
+        # funzione da minimizzare (mean squared difference)
+        def msd_risk(weights, target_risk, cov):
+            """
+            Returns the Mean Squared Difference in risk contributions between weights and target_risk.
+            """
+            w_contribs = Portfolio.risk_contribution(cov, weights)
+            return ((w_contribs-target_risk)**2).sum()
+        
+        from scipy.optimize import minimize
+        weights = minimize(
+            msd_risk,
+            init_guess,
+            args=(target_risk, cov),
+            method='SLSQP',
+            options={'disp': False},
+            constraints=(weights_sum_to_1,),
+            bounds=bounds
+        )
+        return weights.x
+
+    @staticmethod
+    def equal_risk_contributions(cov: np.ndarray) -> np.ndarray:
+        """
+        Returns the weights of the portfolio that equalizes the contribution of the constituents
+        based on the given covariance matrix.
+
+        :param cov: Covariance matrix of the returns.
+        :type cov: np.ndarray
+        :return: Weights of the risk-parity portfolio.
+        :rtype: np.ndarray
+        """
+        n = cov.shape[0]
+        return Portfolio.target_risk_contributions(target_risk=np.repeat(1/n,n), cov=cov)
